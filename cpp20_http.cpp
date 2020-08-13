@@ -2,9 +2,12 @@
 
 //---------------------------------------------------------
 
-#include <string>
 #include <span>
 #include <array>
+#include <system_error>
+
+// Debugging
+#include <iostream>
 
 //---------------------------------------------------------
 
@@ -45,6 +48,49 @@ auto utf8_to_wide(std::u8string_view const p_input, std::span<wchar_t> p_output)
 		p_output[length] = 0;
 	}
 }
+
+auto wide_to_utf8(std::wstring_view const p_input) -> std::u8string {
+	auto result = std::u8string(WideCharToMultiByte(
+		CP_UTF8, 0, 
+		p_input.data(), static_cast<int>(p_input.size()), 
+		0, 0, nullptr, nullptr
+	), '\0');
+
+	WideCharToMultiByte(
+		CP_UTF8, 0, 
+		p_input.data(), static_cast<int>(p_input.size()), 
+		reinterpret_cast<char*>(result.data()), static_cast<int>(result.size()),
+		nullptr, nullptr
+	);
+
+	return result;
+}
+
+auto utf8_to_wide(std::wstring_view const p_input, std::span<char8_t> p_output) {
+	auto const length = WideCharToMultiByte(
+		CP_UTF8, 0, 
+		p_input.data(), static_cast<int>(p_input.size()), 
+		reinterpret_cast<char*>(p_output.data()), static_cast<int>(p_output.size()),
+		nullptr, nullptr
+	);
+
+	if (length > 0) {
+		p_output[length] = 0;
+	}
+}
+
+//---------------------------------------------------------
+
+auto throw_last_winapi_error(
+	std::string p_reason, 
+	int const error_code = static_cast<int>(GetLastError())
+) -> void 
+{
+	p_reason += " with code ";
+	p_reason += std::to_string(error_code);
+	throw std::system_error{error_code, std::system_category(), p_reason};
+}
+
 #endif
 
 //---------------------------------------------------------
@@ -53,42 +99,64 @@ namespace http {
 #ifdef _WIN32
 	class InternetHandle {
 	private:
-		HINTERNET m_handle;
+		HINTERNET m_handle{};
 
 		auto close() {
 			if (m_handle) {
 				InternetCloseHandle(m_handle);
 			}
 		}
+		auto handle_creation_errors() {
+			if (!m_handle) {
+				switch (auto const error_code = GetLastError()) {
+					case ERROR_INTERNET_INVALID_URL:
+						throw error::InvalidUrl{};
+					case ERROR_INTERNET_ITEM_NOT_FOUND:
+						throw error::ItemNotFound{};
+					case ERROR_INTERNET_TIMEOUT:
+						throw error::ConnectionTimeout{};
+					case ERROR_INTERNET_SHUTDOWN:
+						throw error::ConnectionShutdown{};
+					default:
+						throw_last_winapi_error("Creating HINTERNET failed", error_code);
+				}
+			}
+		}
 		
 	public:
-		operator HINTERNET() noexcept const {
+		operator HINTERNET() const noexcept {
 			return m_handle;
 		}
 		
+		InternetHandle() = default;
+		
+		InternetHandle(HINTERNET const p_handle) :
+			m_handle{p_handle}
+		{
+			handle_creation_errors();
+		}
+		auto operator=(HINTERNET const p_internet_handle) -> auto& {
+			close();
+			m_handle = p_internet_handle;
+			handle_creation_errors();
+			return *this;
+		}
+
 		InternetHandle(InternetHandle const&) = delete;
+		auto operator=(InternetHandle const&) -> auto& = delete;
+
 		InternetHandle(InternetHandle&& p_other) :
 			m_handle{p_other.m_handle}
 		{
 			p_other.m_handle = nullptr;
 		}
-	
-		auto operator=(InternetHandle const&) -> auto& = delete;
 		auto operator=(InternetHandle&& p_other) -> auto& {
 			close();
 			m_handle = p_other.m_handle;
 			p_other.m_handle = nullptr;
 			return *this;
 		}
-	
-		InternetHandle(HINTERNET const p_handle) :
-			m_handle{p_handle}
-		{
-			if (!p_handle) {
-				auto const error_code = static_cast<int>(GetLastError());
-				throw std::system_error{error_code, std::system_category(), u8"Creating HINTERNET failed: " + error_code};
-			}
-		}
+
 		~InternetHandle() {
 			close();
 		}
@@ -100,7 +168,7 @@ namespace http {
 
 		//---------------------------------------------------------
 
-		std::wstring m_user_agent;
+		std::wstring m_user_agent = L"Cpp20Http";
 	public:
 		auto set_user_agent(std::u8string_view const p_user_agent) {
 			m_user_agent = utf8_to_wide(p_user_agent);
@@ -118,52 +186,102 @@ namespace http {
 		//---------------------------------------------------------
 
 	private:
-		auto open_connection() -> InternetHandle {
-			auto const internet_open_handle = InternetHandle{InternetOpenW(
+		InternetHandle m_internet_open_handle;
+		// InternetHandle m_url_handle;
+		InternetHandle m_internet_connect_handle;
+		InternetHandle m_open_request_handle;
+	
+		// null termination of the domain name is required
+		auto open_connection(std::wstring const p_domain_name) {
+			m_internet_open_handle = InternetOpenW(
 				m_user_agent.data(), 
 				INTERNET_OPEN_TYPE_DIRECT, 
 				nullptr, nullptr, 
-				INTERNET_FLAG_ASYNC
-			)};
-			return InternetHandle{InternetConnectW(
-				internet_open_handle, 
-				m_url.data(), 
-				INTERNET_DEFAULT_HTTPS_PORT, 
+				0
+			);
+
+			// m_url_handle = InternetOpenUrlW(
+			// 	m_internet_open_handle,
+			// 	m_url.data(),
+			// 	m_headers.data(),
+			// 	m_headers.size(),
+			// 	0, 0
+			// );
+			
+			m_internet_connect_handle = InternetConnectW(
+				m_internet_open_handle, 
+				p_domain_name.data(),
+				INTERNET_DEFAULT_HTTP_PORT, 
 				nullptr, nullptr, 
 				INTERNET_SERVICE_HTTP, 
 				0, 0
-			)};
+			);
 		}
-
-	public:
-		auto send() -> GetResponse {
-			auto internet_handle = open_connection();
+		auto send_request() {
+			auto [domain_name, object_path] = split_url(std::wstring_view{m_url});
+			
+			open_connection(std::wstring{domain_name});
 			
 			auto accepted_types = std::array{L"*", static_cast<LPCWSTR>(nullptr)};
 			
-			internet_handle = HttpOpenRequestW(
-				internet_handle,
+			m_open_request_handle = HttpOpenRequestW(
+				m_internet_connect_handle,
 				L"GET",
-				m_url.data(),
+				object_path.empty() ? nullptr : std::wstring{object_path}.data(), // required to add null terminator
 				nullptr,
 				nullptr,
 				accepted_types.data(),
 				0, 0
 			);
 
-			auto const succeeded = HttpSendRequestW(
-				internet_handle,
+			if (!HttpSendRequestW(
+				m_open_request_handle,
 				m_headers.data(),
 				static_cast<DWORD>(m_headers.size()),
 				nullptr, 0
-			);
-			if (!succeeded) {
-				// TODO: add error handling
+			)) {
+				// TODO: handle error code 12007: name not resolved
+				throw_last_winapi_error("Failed sending http request");
+			}
+		}
+
+		auto get_available_data_size() -> DWORD {
+			auto available_size = DWORD{};
+			if (!InternetQueryDataAvailable(m_open_request_handle, &available_size, 0, 0)) {
+				throw_last_winapi_error("Failed to query the size of the available data to be retreived from the internet.");
+			}
+			return available_size;
+		}
+
+	public:
+		auto send() -> GetResponse {
+			send_request();
+
+			// HttpQueryInfoW(internet_handle, )
+
+			auto available_size = get_available_data_size();
+			auto content = std::vector<std::byte>(available_size);
+			auto read_offset = size_t{};
+			while (true) {
+				auto number_of_bytes_read = DWORD{};
+				auto const succeeded = InternetReadFile(
+					m_open_request_handle, 
+					content.data() + read_offset, 
+					available_size, 
+					&number_of_bytes_read
+				);
+
+				if (available_size = get_available_data_size()) {
+					read_offset += number_of_bytes_read;
+					content.resize(read_offset + available_size);
+				}
+				else
+				{
+					break;
+				}
 			}
 
-			HttpQueryInfoW(internet_handle, )
-
-			return {};
+			return GetResponse{std::move(content)};
 		}
 
 		//---------------------------------------------------------
@@ -171,9 +289,6 @@ namespace http {
 		Implementation(std::u8string_view const p_url) :
 			m_url{utf8_to_wide(p_url)} 
 		{}
-		~Implementation() {
-
-		}
 	};
 #endif
 

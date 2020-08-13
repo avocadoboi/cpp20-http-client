@@ -1,16 +1,88 @@
 #pragma once
 
-#include <string_view>
 #include <memory>
-#include <functional>
+#include <string>
+#include <string_view>
 #include <concepts>
+#include <functional>
+#include <fstream>
 
 namespace http {
-	class GetResponse {
+	namespace error {
+		struct InvalidUrl {};
+		struct ItemNotFound {};
+		struct ConnectionTimeout {};
+		struct ConnectionShutdown {};
+	}
+
+	//---------------------------------------------------------
+
+	template<typename T>
+	concept Character = std::is_same_v<T, char8_t> || 
+		std::is_same_v<T, char16_t> || 
+		std::is_same_v<T, wchar_t>;
+
+	template<Character _Char>
+	struct SplitUrl {
+		std::basic_string_view<_Char> domain_name, path;
+	};
+
+	/*
+		Splits an URL into a server/domain name and file path.
+	*/
+	template<Character _Char>
+	constexpr auto split_url(std::basic_string_view<_Char> const p_url) noexcept 
+		-> SplitUrl<_Char> 
+	{
+		if (p_url.empty()) {
+			return {};
+		}
+
+		constexpr auto select_character = [](char8_t u8, char16_t u16, wchar_t wide) {
+			if constexpr (std::is_same_v<_Char, char8_t>) {
+				return u8;
+			}
+			if constexpr (std::is_same_v<_Char, char16_t>) {
+				return u16;
+			}
+			if constexpr (std::is_same_v<_Char, wchar_t>) {
+				return wide;
+			}
+		};
+		
+		constexpr auto forward_slash = select_character(u8'/', u'/', L'/');
+		constexpr auto colon = select_character(u8':', u':', L':');
+		
+		constexpr auto minimum_split_pos = size_t{2};
+		
+		auto start_pos = size_t{};
+		do {
+			auto const pos = p_url.find(forward_slash, !start_pos ? minimum_split_pos : start_pos);
+			if (pos == std::string_view::npos) {
+				return {p_url.substr(start_pos), {}};
+			}
+			else if (auto const last = p_url[pos - 1];
+				last != colon && last != forward_slash) 
+			{
+				return {p_url.substr(start_pos, pos - start_pos), p_url.substr(pos)};
+			}
+			else {
+				start_pos = pos + 1;
+			}
+		} while (true);
+	}
+
+	//---------------------------------------------------------
+
+	struct GetResponse {
 		std::vector<std::byte> content;
 
-		auto content_as_text() noexcept -> std::u8string_view {
+		auto content_as_text() const noexcept -> std::u8string_view {
 			return std::u8string_view{reinterpret_cast<char8_t const*>(content.data()), content.size()};
+		}
+		auto write_to_file(std::string const& p_file_name) const {
+			auto file_stream = std::ofstream{p_file_name.data(), std::ios::binary};
+			file_stream.write(reinterpret_cast<char const*>(content.data()), content.size());
 		}
 	};
 
