@@ -50,3 +50,11 @@ TEST_CASE("Trying split_url for empty string", "[http::split_url]") {
 	REQUIRE(host_name == u8"");
 	REQUIRE(path == u8"");
 }
+
+TEST_CASE("Tried split_url for http://bjornsundin.com/projects/index.html at compile time.", "[http::split_url]") {
+	// constexpr isn't allowed for structured bindings yet :(
+	constexpr auto split = http::split_url(u8"http://bjornsundin.com/projects/index.html"sv);
+
+	REQUIRE(split.domain_name == u8"bjornsundin.com");
+	REQUIRE(split.path == u8"/projects/index.html");
+}

@@ -114,9 +114,9 @@ namespace http {
 					case ERROR_INTERNET_ITEM_NOT_FOUND:
 						throw error::ItemNotFound{};
 					case ERROR_INTERNET_TIMEOUT:
-						throw error::ConnectionTimeout{};
+						throw error::ConnectionFailed::Timeout;
 					case ERROR_INTERNET_SHUTDOWN:
-						throw error::ConnectionShutdown{};
+						throw error::ConnectionFailed::Shutdown;
 					default:
 						throw_last_winapi_error("Creating HINTERNET failed", error_code);
 				}
@@ -179,19 +179,24 @@ namespace http {
 	private:		
 		std::wstring m_headers;
 	public:
-		auto set_headers(std::u8string_view const p_headers) {
-			m_headers = utf8_to_wide(p_headers);	
+		auto add_headers(std::u8string_view const p_headers) {
+			if (p_headers.empty()) {
+				return;
+			}
+			m_headers += utf8_to_wide(p_headers);
+			if (p_headers.back() != u8'\n') {
+				m_headers += L'\n';
+			}
 		}
 
 		//---------------------------------------------------------
 
 	private:
 		InternetHandle m_internet_open_handle;
-		// InternetHandle m_url_handle;
 		InternetHandle m_internet_connect_handle;
 		InternetHandle m_open_request_handle;
 	
-		// null termination of the domain name is required
+		// not wstring_view because null termination is required
 		auto open_connection(std::wstring const p_domain_name) {
 			m_internet_open_handle = InternetOpenW(
 				m_user_agent.data(), 
@@ -200,14 +205,6 @@ namespace http {
 				0
 			);
 
-			// m_url_handle = InternetOpenUrlW(
-			// 	m_internet_open_handle,
-			// 	m_url.data(),
-			// 	m_headers.data(),
-			// 	m_headers.size(),
-			// 	0, 0
-			// );
-			
 			m_internet_connect_handle = InternetConnectW(
 				m_internet_open_handle, 
 				p_domain_name.data(),
@@ -218,7 +215,7 @@ namespace http {
 			);
 		}
 		auto send_request() {
-			auto [domain_name, object_path] = split_url(std::wstring_view{m_url});
+			auto const [domain_name, object_path] = split_url(std::wstring_view{m_url});
 			
 			open_connection(std::wstring{domain_name});
 			
@@ -240,8 +237,12 @@ namespace http {
 				static_cast<DWORD>(m_headers.size()),
 				nullptr, 0
 			)) {
-				// TODO: handle error code 12007: name not resolved
-				throw_last_winapi_error("Failed sending http request");
+				switch (auto const error_code = GetLastError()) {
+					case ERROR_INTERNET_NAME_NOT_RESOLVED:
+						throw error::ConnectionFailed::NoInternet;
+					default:
+						throw_last_winapi_error("Failed sending http request", error_code);
+				}
 			}
 		}
 
@@ -252,13 +253,7 @@ namespace http {
 			}
 			return available_size;
 		}
-
-	public:
-		auto send() -> GetResponse {
-			send_request();
-
-			// HttpQueryInfoW(internet_handle, )
-
+		auto read_response_content() -> std::vector<std::byte> {
 			auto available_size = get_available_data_size();
 			auto content = std::vector<std::byte>(available_size);
 			auto read_offset = size_t{};
@@ -275,13 +270,23 @@ namespace http {
 					read_offset += number_of_bytes_read;
 					content.resize(read_offset + available_size);
 				}
-				else
+				else if (succeeded)
 				{
 					break;
 				}
 			}
+			return content;
+		}
 
-			return GetResponse{std::move(content)};
+	public:
+		auto send() -> GetResponse {
+			send_request();
+
+			// HttpQueryInfoW(internet_handle, )
+
+			return GetResponse{
+				.content = read_response_content()
+			};
 		}
 
 		//---------------------------------------------------------
@@ -299,8 +304,8 @@ namespace http {
 		return *this;
 	}
 
-	auto GetRequest::set_headers(std::u8string_view const p_headers) -> GetRequest& {
-		m_implementation->set_headers(p_headers);
+	auto GetRequest::add_headers(std::u8string_view const p_headers) -> GetRequest& {
+		m_implementation->add_headers(p_headers);
 		return *this;
 	}
 
