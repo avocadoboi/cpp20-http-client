@@ -44,7 +44,14 @@ TEST_CASE("Trying split_url for github.com", "[http::split_url]") {
 	REQUIRE(path == u8"");
 }
 
-TEST_CASE("Trying split_url for empty string", "[http::split_url]") {
+TEST_CASE("Trying split_url for single character.", "[http::split_url]") {
+	auto const [host_name, path] = http::split_url(u8"a"sv);
+
+	REQUIRE(host_name == u8"a");
+	REQUIRE(path == u8"");
+}
+
+TEST_CASE("Trying split_url for empty string.", "[http::split_url]") {
 	auto const [host_name, path] = http::split_url(u8""sv);
 
 	REQUIRE(host_name == u8"");

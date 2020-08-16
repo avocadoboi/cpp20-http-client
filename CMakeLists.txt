@@ -5,6 +5,12 @@ set(CMAKE_CXX_STANDARD 20)
 
 #-----------------------------
 
+if (WIN32)
+	link_libraries(Wininet)
+endif (WIN32)
+
+#-----------------------------
+
 file(GLOB test_sources tests/*.cpp)
 add_executable(cpp20_http_test cpp20_http.cpp ${test_sources})
 
