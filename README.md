@@ -20,16 +20,18 @@ As of now, only gcc supports all of the c++20 features used in this library. Add
 #include <cpp20_internet_client.hpp>
 #include <iostream>
 
+using namespace internet_client;
+
 auto main() -> int {
 	try {
-		auto const response = http::get(u8"example.com").send();
-		response.write_content_to_file("index.html");
+		auto const response = http::get("example.com").send();
+		response.write_body_to_file("index.html");
 	} 
 	// Some examples of exceptions that you should handle: 
-	catch (http::error::ItemNotFound) {
+	catch (errors::ItemNotFound) {
 		std::cout << "example.com was taken down???\n";
 	}
-	catch (http::error::ConnectionFailed) {
+	catch (errors::ConnectionFailed) {
 		std::cout << "The connection failed, maybe you don't have any internet connection :(\n";
 	}
 }
