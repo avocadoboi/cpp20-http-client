@@ -1,16 +1,17 @@
 #include <catch2/catch.hpp>
 
-#include <cpp20_http.hpp>
+#include <cpp20_internet_client.hpp>
 
+using namespace internet_client;
 using namespace std::string_view_literals;
 
 template<typename T>
 constexpr auto select() {
-	return http::util::select_on_type<T>('a', "hello"sv, 5, 3.14159265);
+	return utils::select_on_type<T>('a', "hello"sv, 5, 3.14159265);
 }
 
 // This is a compile-time test, but this will ensure it'll get compiled properly because the code is used somewhere.
-TEST_CASE("Tried util::select_on_type with char, std::string_view, int and double (at compile time)", "http::util::select_on_type") {
+TEST_CASE("Tried util::select_on_type with char, std::string_view, int and double (at compile time)") {
 	constexpr auto a = select<char>();
 	static_assert(a == 'a');
 	

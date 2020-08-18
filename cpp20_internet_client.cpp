@@ -1,4 +1,28 @@
-#include "cpp20_http.hpp"
+/*
+MIT License
+
+Copyright (c) 2020 Björn Sundin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
+#include "cpp20_internet_client.hpp"
 
 //---------------------------------------------------------
 
@@ -6,24 +30,20 @@
 #include <array>
 #include <system_error>
 
-// Debugging
-#include <iostream>
-
 //---------------------------------------------------------
 
 #ifdef _WIN32
 #include <windows.h>
 
 #include <WinInet.h>
-// #pragma comment(lib, "Wininet")
 #endif
 
 //---------------------------------------------------------
 
-namespace http {
+namespace internet_client {
 
 // Platform-specific utilities
-namespace util {
+namespace utils {
 
 #ifdef _WIN32
 namespace win {
@@ -101,7 +121,9 @@ auto throw_error(
 } // namespace win
 #endif // _WIN32
 
-} // namespace util
+} // namespace utils
+
+namespace http {
 
 #ifdef _WIN32
 class InternetHandle {
@@ -123,15 +145,15 @@ private:
 		if (!m_handle) {
 			switch (auto const error_code = GetLastError()) {
 				case ERROR_INTERNET_INVALID_URL:
-					throw error::InvalidUrl{};
+					throw errors::InvalidUrl{};
 				case ERROR_INTERNET_ITEM_NOT_FOUND:
-					throw error::ItemNotFound{};
+					throw errors::ItemNotFound{};
 				case ERROR_INTERNET_TIMEOUT:
-					throw error::ConnectionFailed::Timeout;
+					throw errors::ConnectionFailed::Timeout;
 				case ERROR_INTERNET_SHUTDOWN:
-					throw error::ConnectionFailed::Shutdown;
+					throw errors::ConnectionFailed::Shutdown;
 				default:
-					util::win::throw_error("Creating HINTERNET failed", error_code);
+					utils::win::throw_error("Creating HINTERNET failed", error_code);
 			}
 		}
 	}
@@ -174,45 +196,56 @@ public:
 
 struct HttpConnectionHandles {
 	InternetHandle
-		internet_open_handle,
-		internet_connect_handle,
-		open_request_handle;
+		internet_open,
+		internet_connect,
+		open_request;
 };
 
 class GetResponse::Implementation {
 private:
 	HttpConnectionHandles m_connection;
 
-	std::optional<std::vector<std::byte>> mutable m_content;
+	std::optional<std::vector<std::byte>> m_body;
 	
 	[[nodiscard]]
-	auto get_available_data_size() const -> DWORD {
+	auto get_available_data_size() -> DWORD {
 		auto available_size = DWORD{};
-		if (!InternetQueryDataAvailable(m_connection.open_request_handle, &available_size, 0, 0)) {
-			util::win::throw_error("Failed to query the size of the packet.");
+		if (!InternetQueryDataAvailable(m_connection.open_request, &available_size, 0, 0)) {
+			utils::win::throw_error("Failed to query the size of the packet.");
 		}
 		return available_size;
 	}
-	auto read_response_content() const -> void {
-		if (m_content) {
+
+	struct PacketReadResult {
+		DWORD bytes_read;
+		bool succeeded;
+	};
+	[[nodiscard]]
+	auto read_packet(std::span<std::byte> const p_buffer) const -> PacketReadResult {
+		auto result = PacketReadResult{};
+		result.succeeded = InternetReadFile(
+			m_connection.open_request, 
+			p_buffer.data(), p_buffer.size(), 
+			&result.bytes_read
+		);
+		return result;
+	}
+	
+	auto read_response_body() -> void {
+		if (m_body) {
 			return;
 		}
 
 		auto available_size = get_available_data_size();
-		m_content = std::vector<std::byte>(available_size);
+		m_body = std::vector<std::byte>(available_size);
+
 		auto read_offset = size_t{};
 		while (true) {
-			auto number_of_bytes_read = DWORD{};
-			auto const succeeded = InternetReadFile(
-				m_connection.open_request_handle, 
-				m_content->data() + read_offset, 
-				available_size, 
-				&number_of_bytes_read
-			);
+			auto const [bytes_read, succeeded] = read_packet({m_body->data() + read_offset, available_size});
 
 			if (available_size = get_available_data_size()) {
-				read_offset += number_of_bytes_read;
-				m_content->resize(read_offset + available_size);
+				read_offset += bytes_read;
+				m_body->resize(read_offset + available_size);
 			}
 			else if (succeeded)
 			{
@@ -222,56 +255,51 @@ private:
 	}
 public:
 	[[nodiscard]]
-	auto get_content_data() const -> std::span<std::byte> {
-		if (!m_content) {
-			read_response_content();
+	auto get_body() -> std::span<std::byte> {
+		if (!m_body) {
+			read_response_body();
 		}
-		return *m_content;
+		return *m_body;
 	}
 
 private:
-	std::optional<std::u8string> mutable m_headers_string;
+	std::optional<std::string> m_headers_string;
 
 	[[nodiscard]]
-	auto query_response_info_string(int p_info_flag) const -> std::u8string {
-		auto const query_info = [&](wchar_t* const buffer, DWORD* const size) -> bool {
-			return HttpQueryInfoW(
-				m_connection.open_request_handle, 
-				p_info_flag, 
-				buffer, 
-				size,
-				0
-			);
+	auto query_response_info_string(int const p_info_flag) -> std::string {
+		auto const throw_error = [](int const error_code) {
+			utils::win::throw_error("Failed to retrieve response info string", error_code);
 		};
 
-		auto static_buffer = std::array<wchar_t, 256>();
-		auto buffer_byte_count = static_cast<DWORD>(static_buffer.size()*sizeof(wchar_t));
-
-		if (query_info(static_buffer.data(), &buffer_byte_count)) {
-			return util::win::wide_to_utf8({static_buffer.data(), buffer_byte_count/sizeof(wchar_t)});
-		}
-		else
-		{
-			auto error_code = GetLastError();
-			if (error_code == ERROR_INSUFFICIENT_BUFFER) {
-				auto dynamic_buffer = std::vector<wchar_t>(buffer_byte_count/sizeof(wchar_t));
-				if (query_info(dynamic_buffer.data(), &buffer_byte_count)) {
-					return util::win::wide_to_utf8({dynamic_buffer.data(), buffer_byte_count/sizeof(wchar_t)});
-				}
-				else {
-					error_code = GetLastError();
-				}
+		auto buffer_byte_count = DWORD{};
+		auto const try_buffer = [&](auto&& buffer) -> std::optional<std::string> {
+			if (HttpQueryInfoA(m_connection.open_request, p_info_flag, buffer.data(), &buffer_byte_count, 0)) {
+				return std::string{buffer.data(), buffer_byte_count};
 			}
-			util::win::throw_error("Failed to retrieve response info string", error_code);
-		}
+			return {};
+		};
+
+		constexpr auto static_buffer_size = 256;
+		buffer_byte_count = static_buffer_size;
+		if (auto const result = try_buffer(std::array<char, static_buffer_size>())) {
+			return *result;
+		} else if (auto const error_code = GetLastError(); error_code == ERROR_INSUFFICIENT_BUFFER) {
+			if (auto const result = try_buffer(std::vector<char>(buffer_byte_count))) {
+				return *result;
+			}
+			else throw_error(GetLastError());
+		} else throw_error(error_code);
+
+		// This technically can't happen but compilers warn if we don't return in every path.
+		return {};
 	}
-	auto query_headers_string() const -> void {
+	auto query_headers_string() -> void {
 		m_headers_string = query_response_info_string(HTTP_QUERY_RAW_HEADERS_CRLF);
 	}
 	
 public:
 	[[nodiscard]]
-	auto get_headers_string() const -> std::u8string_view {
+	auto get_headers_string() -> std::string_view {
 		if (!m_headers_string) {
 			query_headers_string();
 		}
@@ -279,8 +307,8 @@ public:
 	}
 	
 private:
-	std::optional<std::vector<Header>> mutable m_parsed_headers;
-	auto parse_headers() const -> void {
+	std::optional<std::vector<Header>> m_parsed_headers;
+	auto parse_headers() -> void {
 		if (!m_headers_string) {
 			query_headers_string();
 		}
@@ -288,7 +316,7 @@ private:
 	}
 public:
 	[[nodiscard]]
-	auto get_headers() const -> std::span<Header> {
+	auto get_headers() -> std::span<Header> {
 		if (!m_parsed_headers) {
 			parse_headers();
 		}
@@ -297,20 +325,24 @@ public:
 
 private:
 	[[nodiscard]]
-	auto find_header(std::u8string_view const p_name) const 
+	auto find_header(std::string_view const p_name) 
 		-> std::optional<std::vector<Header>::iterator>
 	{
 		if (!m_parsed_headers) {
 			parse_headers();
 		}
-		return util::find_if(*m_parsed_headers, [&](auto const& header) {
-			return header.name == p_name; // TODO: handle case insensitivity.
+
+		auto const transform_lowercase = std::views::transform([](char c) { return static_cast<char>(std::tolower(c)); });
+
+		auto const lowercase_name_to_search = utils::range_to_string(p_name | transform_lowercase);
+		return utils::find_if(*m_parsed_headers, [&](auto const& header) {
+			return std::ranges::equal(lowercase_name_to_search, header.name | transform_lowercase);
 		});
 	}
 
 public:
 	[[nodiscard]]
-	auto get_header(std::u8string_view const p_name) const -> std::optional<Header> {
+	auto get_header(std::string_view const p_name) -> std::optional<Header> {
 		if (auto const pos = find_header(p_name)) {
 			return **pos;
 		}
@@ -319,7 +351,7 @@ public:
 		}
 	}
 	[[nodiscard]]
-	auto get_header_value(std::u8string_view const p_name) const -> std::optional<std::u8string_view> {
+	auto get_header_value(std::string_view const p_name) -> std::optional<std::string_view> {
 		if (auto const pos = find_header(p_name)) {
 			return (*pos)->value;
 		}
@@ -328,60 +360,63 @@ public:
 		}
 	}
 
+public:
 	Implementation(HttpConnectionHandles&& p_connection) : 
 		m_connection{std::move(p_connection)}
 	{}
 };
 #endif // _WIN32
 
-auto GetResponse::get_headers() const -> std::span<Header> {
-	return m_implementation->get_headers();
-}
-auto GetResponse::get_headers_string() const -> std::u8string_view {
-	return m_implementation->get_headers_string();
-}
-
-auto GetResponse::get_header(std::u8string_view p_header_name) const -> std::optional<Header> {
-	return m_implementation->get_header(p_header_name);
-}
-auto GetResponse::get_header_value(std::u8string_view p_header_name) const -> std::optional<std::u8string_view> {
-	return m_implementation->get_header_value(p_header_name);
-}
-
-auto GetResponse::get_content_data() const -> std::span<std::byte> {
-	return m_implementation->get_content_data();
-}
-
-GetResponse::~GetResponse() = default;
-
 GetResponse::GetResponse(std::unique_ptr<Implementation> p_implementation) :
 	m_implementation{std::move(p_implementation)}
 {}
 
+GetResponse::GetResponse(GetResponse&&) = default;
+auto GetResponse::operator=(GetResponse&&) -> GetResponse& = default;
+
+GetResponse::~GetResponse() = default;
+
+auto GetResponse::get_headers() const -> std::span<Header> {
+	return m_implementation->get_headers();
+}
+auto GetResponse::get_headers_string() const -> std::string_view {
+	return m_implementation->get_headers_string();
+}
+
+auto GetResponse::get_header(std::string_view p_header_name) const -> std::optional<Header> {
+	return m_implementation->get_header(p_header_name);
+}
+auto GetResponse::get_header_value(std::string_view p_header_name) const -> std::optional<std::string_view> {
+	return m_implementation->get_header_value(p_header_name);
+}
+
+auto GetResponse::get_body() const -> std::span<std::byte> {
+	return m_implementation->get_body();
+}
 
 //---------------------------------------------------------
 
 #ifdef _WIN32
 class GetRequest::Implementation {
 private:
-	std::wstring m_user_agent = L"Cpp20Http";
+	std::string m_user_agent = std::string{GetRequest::default_user_agent};
 public:
-	auto set_user_agent(std::u8string_view const p_user_agent) -> void {
-		m_user_agent = util::win::utf8_to_wide(p_user_agent);
+	auto set_user_agent(std::string_view const p_user_agent) -> void {
+		m_user_agent = p_user_agent;
 	}
 
 	//---------------------------------------------------------
 
 private:		
-	std::wstring m_headers;
+	std::string m_headers;
 public:
-	auto add_headers(std::u8string_view const p_headers) -> void {
+	auto add_headers(std::string_view const p_headers) -> void {
 		if (p_headers.empty()) {
 			return;
 		}
-		m_headers += util::win::utf8_to_wide(p_headers);
-		if (p_headers.back() != u8'\n') {
-			m_headers += L"\r\n"; // CRLF is the correct line ending for the HTTP protocol
+		m_headers += p_headers;
+		if (p_headers.back() != '\n') {
+			m_headers += "\r\n"; // CRLF is the correct line ending for the HTTP protocol
 		}
 	}
 
@@ -392,14 +427,14 @@ private:
 
 	// not wstring_view because null termination is required
 	auto open_connection(std::wstring const p_domain_name) -> void {
-		m_connection.internet_open_handle = InternetOpenW(
+		m_connection.internet_open = InternetOpenA(
 			m_user_agent.data(), 
 			INTERNET_OPEN_TYPE_DIRECT, 
 			nullptr, nullptr, 
 			0
 		);
-		m_connection.internet_connect_handle = InternetConnectW(
-			m_connection.internet_open_handle, 
+		m_connection.internet_connect = InternetConnectW(
+			m_connection.internet_open, 
 			p_domain_name.data(),
 			INTERNET_DEFAULT_HTTP_PORT, 
 			nullptr, nullptr, 
@@ -411,8 +446,8 @@ private:
 	auto open_request(std::wstring const p_object_path) -> void {
 		auto accepted_types = std::array{L"*", static_cast<LPCWSTR>(nullptr)};
 		
-		m_connection.open_request_handle = HttpOpenRequestW(
-			m_connection.internet_connect_handle,
+		m_connection.open_request = HttpOpenRequestW(
+			m_connection.internet_connect,
 			L"GET",
 			p_object_path.empty() ? nullptr : p_object_path.data(), // required to add null terminator
 			nullptr,
@@ -423,17 +458,17 @@ private:
 	}
 
 	auto send_request() -> void {
-		if (!HttpSendRequestW(
-			m_connection.open_request_handle,
+		if (!HttpSendRequestA(
+			m_connection.open_request,
 			m_headers.data(),
 			static_cast<DWORD>(m_headers.size()),
 			nullptr, 0
 		)) {
 			switch (auto const error_code = GetLastError()) {
 				case ERROR_INTERNET_NAME_NOT_RESOLVED:
-					throw error::ConnectionFailed::NoInternet;
+					throw errors::ConnectionFailed::NoInternet;
 				default:
-					util::win::throw_error("Failed sending http request", error_code);
+					utils::win::throw_error("Failed sending http request", error_code);
 			}
 		}
 	}
@@ -441,7 +476,7 @@ private:
 public:
 	[[nodiscard]]
 	auto send() -> GetResponse {
-		auto const [domain_name, object_path] = algorithms::split_url(std::wstring_view{m_url});
+		auto const [domain_name, object_path] = utils::split_url(std::wstring_view{m_url});
 		
 		open_connection(std::wstring{domain_name});
 		open_request(std::wstring{object_path});
@@ -456,19 +491,24 @@ private:
 	std::wstring m_url;
 public:
 	Implementation(std::u8string_view const p_url) :
-		m_url{util::win::utf8_to_wide(p_url)} 
+		m_url{utils::win::utf8_to_wide(p_url)} 
 	{}
 };
 #endif // _WIN32
 
 //---------------------------------------------------------
 
-auto GetRequest::set_user_agent(std::u8string_view const p_user_agent) && -> GetRequest&& {
+GetRequest::GetRequest(GetRequest&&) = default;
+auto GetRequest::operator=(GetRequest&&) -> GetRequest& = default;
+
+GetRequest::~GetRequest() = default;
+
+auto GetRequest::set_user_agent(std::string_view const p_user_agent) && -> GetRequest&& {
 	m_implementation->set_user_agent(p_user_agent);
 	return std::move(*this);
 }
 
-auto GetRequest::add_headers(std::u8string_view const p_headers) && -> GetRequest&& {
+auto GetRequest::add_headers(std::string_view const p_headers) && -> GetRequest&& {
 	m_implementation->add_headers(p_headers);
 	return std::move(*this);
 }
@@ -480,6 +520,7 @@ auto GetRequest::send() && -> GetResponse {
 GetRequest::GetRequest(std::u8string_view const p_url) :
 	m_implementation{std::make_unique<Implementation>(p_url)} 
 {}
-GetRequest::~GetRequest() = default;
 
 } // namespace http
+
+} // namespace internet_client

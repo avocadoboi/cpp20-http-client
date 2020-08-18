@@ -2,3 +2,4 @@
 !*.hpp
 !*.cpp
 !CMakeLists.txt
+!*.md
