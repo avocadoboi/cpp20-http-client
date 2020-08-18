@@ -2,10 +2,10 @@
 
 c++20 internet client is a (for now) experimental HTTP/FTP client library written in c++20. The library only consists of a single header and cpp source file.
 
-As of now, only gcc supports all of the c++20 features used in this library. Additionally, there are some c++20 features that are not used in the library because no compiler or standard library yet supports them. However the library be updated over time as compilers start implementing more of c++20.
+As of now, only gcc supports all of the c++20 features used in this library. Additionally, there are some c++20 features that are not used in the library because no compiler or standard library yet supports them. However the library will be updated over time as compilers start implementing more of c++20.
 
 
-## Goals
+## Aims
 * User friendly, functional design
 * An API that is hard to misuse
 * All calculations and internal API calls are lazily made and cached
