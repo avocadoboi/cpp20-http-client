@@ -1,4 +1,6 @@
 *
+!tests/
+!examples/
 !*.hpp
 !*.cpp
 !CMakeLists.txt
