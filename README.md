@@ -29,10 +29,10 @@ auto main() -> int {
 		response.write_body_to_file("index.html");
 	} 
 	// Some examples of exceptions that you should handle: 
-	catch (errors::ItemNotFound) {
+	catch (errors::ItemNotFound const&) {
 		std::cout << "example.com was taken down???\n";
 	}
-	catch (errors::ConnectionFailed) {
+	catch (errors::ConnectionFailed const&) {
 		std::cout << "The connection failed, maybe you don't have any internet connection :(\n";
 	}
 }
