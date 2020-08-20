@@ -145,6 +145,7 @@ private:
 		if (!m_handle) {
 			switch (auto const error_code = GetLastError()) {
 				case ERROR_INTERNET_INVALID_URL:
+				case ERROR_INVALID_NAME:
 					throw errors::InvalidUrl{};
 				case ERROR_INTERNET_ITEM_NOT_FOUND:
 					throw errors::ItemNotFound{};
@@ -332,11 +333,9 @@ private:
 			parse_headers();
 		}
 
-		auto const transform_lowercase = std::views::transform([](char c) { return static_cast<char>(std::tolower(c)); });
-
-		auto const lowercase_name_to_search = utils::range_to_string(p_name | transform_lowercase);
+		auto const lowercase_name_to_search = utils::range_to_string(p_name | utils::ascii_lowercase_transform);
 		return utils::find_if(*m_parsed_headers, [&](auto const& header) {
-			return std::ranges::equal(lowercase_name_to_search, header.name | transform_lowercase);
+			return std::ranges::equal(lowercase_name_to_search, header.name | utils::ascii_lowercase_transform);
 		});
 	}
 

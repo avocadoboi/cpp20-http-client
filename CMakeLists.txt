@@ -21,4 +21,9 @@ add_executable(cpp20_internet_client cpp20_internet_client.cpp examples/get_requ
 #-----------------------------
 # All targets
 
+# Thanks to https://foonathan.net/2018/10/cmake-warnings/
+add_compile_options(
+	$<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:-Wall -Werror -pedantic-errors -Wextra>
+    $<$<CXX_COMPILER_ID:MSVC>:/WX /W4>
+)
 include_directories("./")

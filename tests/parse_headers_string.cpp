@@ -5,14 +5,14 @@
 using namespace internet_client;
 using namespace std::string_view_literals;
 
-TEST_CASE("Tried parse_headers_string with single line") {
+TEST_CASE("Trying parse_headers_string with single line") {
 	auto const headers = http::algorithms::parse_headers_string("Last-Modified: tomorrow at 4 am");
 
 	REQUIRE(headers.size() == 1);
 	REQUIRE(headers[0] == http::Header{.name="Last-modified", .value="tomorrow at 4 am"});
 }
 
-TEST_CASE("Tried parse_headers_string with multiple lines") {
+TEST_CASE("Trying parse_headers_string with multiple lines") {
 	auto const headers = http::algorithms::parse_headers_string(
 R"(
 
@@ -39,7 +39,7 @@ Last-Modified: tomorrow at 4 am
 	}
 }
 
-TEST_CASE("Tried parse_headers_string with multiple lines without any valid headers") {
+TEST_CASE("Trying parse_headers_string with multiple lines without any valid headers") {
 	auto const headers = http::algorithms::parse_headers_string(
 R"(
 One ~ aaa
@@ -54,6 +54,6 @@ Last-Modified - tomorrow at 4 am
 	REQUIRE(headers.size() == 0);
 }
 
-TEST_CASE("Tried parse_headers_string with empty string") {
-	REQUIRE(http::algorithms::parse_headers_string("").size() == 0);
+TEST_CASE("Trying parse_headers_string with empty string") {
+	REQUIRE(http::algorithms::parse_headers_string("").empty());
 }

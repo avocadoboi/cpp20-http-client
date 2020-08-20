@@ -126,11 +126,11 @@ inline auto utf8_string_to_u8string(std::string_view const p_utf8_string) noexce
 }
 
 /*
-	This is a concept representing any UTF-8 or UTF-16 character code point.
+	This is a concept representing any UTF-8, UTF-16 or UTF-32 character code point.
 	It is true for char, char8_t, char16_t or wchar_t character types.
 */
 template<typename T>
-concept IsCharacter = IsAnyOf<T, char, char8_t, char16_t, wchar_t>;
+concept IsCharacter = IsAnyOf<T, char, char8_t, char16_t, char32_t, wchar_t>;
 
 /*
 	Converts a range of contiguous characters to a std::basic_string_view.
@@ -227,7 +227,7 @@ struct SplitUrl {
 };
 
 template<utils::IsCharacter _Char>
-constexpr auto forward_slash = utils::select_on_type<_Char>('/', u8'/', u'/', L'/');
+constexpr auto forward_slash = utils::select_on_type<_Char>('/', u8'/', u'/', U'/', L'/');
 
 /*
 	Splits an URL into a server/domain name and file path.
@@ -241,7 +241,7 @@ constexpr auto split_url(std::basic_string_view<_Char> const p_url) noexcept
 		return {};
 	}
 	
-	constexpr auto colon = select_on_type<_Char>(':', u8':', u':', L':');
+	constexpr auto colon = select_on_type<_Char>(':', u8':', u':', U':', L':');
 	
 	constexpr auto minimum_split_pos = size_t{2};
 	
@@ -272,7 +272,7 @@ constexpr auto extract_filename(std::basic_string_view<_Char> const p_url) noexc
 	if (auto const slash_pos = p_url.rfind(forward_slash<_Char>);
 		slash_pos != std::string_view::npos)
 	{
-		constexpr auto question_mark = select_on_type<_Char>('?', u8'?', u'?', L'?');
+		constexpr auto question_mark = select_on_type<_Char>('?', u8'?', u'?', U'?', L'?');
 
 		if (auto const question_mark_pos = p_url.find(question_mark, slash_pos + 1);
 			question_mark_pos != std::string_view::npos)
@@ -283,6 +283,15 @@ constexpr auto extract_filename(std::basic_string_view<_Char> const p_url) noexc
 		return p_url.substr(slash_pos + 1);
 	}
 	return {};
+}
+
+constexpr auto get_is_allowed_uri_character(char const character) noexcept -> bool {
+	constexpr auto other_characters = std::string_view{"-._~:/?#[]@!$&'()*+,;="};
+	
+	return character >= '0' && character <= '9' || 
+		character >= 'a' && character <= 'z' ||
+		character >= 'A' && character <= 'Z' ||
+		other_characters.find(character) != std::string_view::npos;
 }
 
 } // namespace utils
@@ -325,10 +334,6 @@ enum class ConnectionFailed {
 //---------------------------------------------------------
 
 namespace http {
-
-using namespace std::string_view_literals;
-
-//---------------------------------------------------------
 
 struct Header;
 
@@ -481,7 +486,7 @@ public:
 
 	~GetRequest(); // = default in .cpp
 
-	static constexpr auto default_user_agent = "Cpp20InternetClient"sv;
+	static constexpr auto default_user_agent = std::string_view{"Cpp20InternetClient"};
 
 	/*
 		Sets the name of the application that is sending the HTTP request.
@@ -586,7 +591,7 @@ inline auto parse_headers_string(std::string_view const p_headers) -> std::vecto
 				So we're just ignoring whitespace before the value, and after because there may be
 				an \r there if the line endings are CRLF.
 			*/
-			constexpr auto whitespace_characters = " \t\r"sv;
+			constexpr auto whitespace_characters = std::string_view{" \t\r"};
 			if (auto const value_start = line.find_first_not_of(whitespace_characters, colon_pos + 1);
 			    value_start != std::string_view::npos) 
 			{
