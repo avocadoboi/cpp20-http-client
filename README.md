@@ -10,6 +10,7 @@ As of now, only gcc supports all of the c++20 features used in this library. Add
 * An API that is hard to misuse
 * All calculations and internal API calls are lazily made and cached
 * Library code follows c++ core guidelines
+* A single module file when build systems and compilers have good support for modules
 * Support for GET and POST requests
 * Support for FTP
 * Support for Windows, Linux and MacOS. Currently only Windows is supported.
@@ -28,10 +29,10 @@ auto main() -> int {
 		response.write_body_to_file("index.html");
 	} 
 	// Some examples of exceptions that you should handle: 
-	catch (errors::ItemNotFound) {
+	catch (errors::ItemNotFound const&) {
 		std::cout << "example.com was taken down???\n";
 	}
-	catch (errors::ConnectionFailed) {
+	catch (errors::ConnectionFailed const&) {
 		std::cout << "The connection failed, maybe you don't have any internet connection :(\n";
 	}
 }
