@@ -11,8 +11,8 @@ As of now, only gcc supports all of the c++20 features used in this library. Add
 * All calculations and internal API calls are lazily made and cached
 * Library code follows c++ core guidelines
 * A single module file when build systems and compilers have good support for modules
-* Support for GET and POST requests
-* Support for FTP
+* Support for GET and POST requests; HTTP and HTTPS
+* Support for FTP and SFTP
 * Support for Windows, Linux and MacOS. Currently only Windows is supported.
 
 ## Simple "GET" request example
