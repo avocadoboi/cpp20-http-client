@@ -69,24 +69,43 @@ concept IsAnyOf = (std::same_as<T, U> || ...);
 	It just forwards the argument to the return value.
 */
 template<typename T>
-[[nodiscard]]
-constexpr auto select_on_type(T&& p_item) noexcept -> T&& {
-	return std::forward<T>(p_item);
+[[nodiscard]] constexpr auto select_on_type(T&& item) noexcept -> T&& {
+	return std::forward<T>(item);
 }
 /*
 	Selects a variable from the argument list based on 
 	its type, which is given as a template argument.
 */
 template<typename T, typename U, typename ... V> requires IsAnyOf<T, U, V...>
-[[nodiscard]]
-constexpr auto select_on_type(U&& p_first_item, V&& ... p_items) noexcept -> auto&& {
+[[nodiscard]] constexpr auto select_on_type(U&& first_item, V&& ... items) noexcept -> auto&& {
 	if constexpr (std::is_same_v<T, U>) {
-		return std::forward<U>(p_first_item);
+		return std::forward<U>(first_item);
 	}
 	else {
-		return select_on_type<T>(std::forward<V>(p_items)...);
+		return select_on_type<T>(std::forward<V>(items)...);
 	}
 }
+
+//---------------------------------------------------------
+
+template<typename T> requires requires (T callable) { callable(); }
+class Cleanup {
+private:
+	T m_callable;
+	
+public:
+	Cleanup(T&& callable) :
+		m_callable{std::forward<T>(callable)}
+	{}
+	~Cleanup() {
+		m_callable();
+	}
+
+	Cleanup(Cleanup const&) = delete;
+	auto operator=(Cleanup const&) -> Cleanup& = delete;
+	Cleanup(Cleanup&&) = delete;
+	auto operator=(Cleanup&&) -> Cleanup& = delete;
+};
 
 //---------------------------------------------------------
 
@@ -100,7 +119,7 @@ constexpr auto select_on_type(U&& p_first_item, V&& ... p_items) noexcept -> aut
 	encoded.
 */
 [[nodiscard]] 
-inline auto u8string_to_utf8_string(std::u8string_view const p_u8string) noexcept 
+inline auto u8string_to_utf8_string(std::u8string_view const u8string) noexcept 
 	-> std::string_view 
 {
 	return std::string_view{
@@ -108,29 +127,22 @@ inline auto u8string_to_utf8_string(std::u8string_view const p_u8string) noexcep
 		// compiler to pretend the bytes are char instead of char8_t,
 		// which is the intended behavior. The encoding should still
 		// be utf-8.
-		reinterpret_cast<char const*>(p_u8string.data()), 
-		p_u8string.size(),
+		reinterpret_cast<char const*>(u8string.data()), // TODO: replace with bit_cast when compilers have implemented it.
+		u8string.size(),
 	};
 }
 /*
 	The reverse of u8string_to_utf8_string.
 */
 [[nodiscard]]
-inline auto utf8_string_to_u8string(std::string_view const p_utf8_string) noexcept
+inline auto utf8_string_to_u8string(std::string_view const utf8_string) noexcept
 	-> std::u8string_view 
 {
 	return std::u8string_view{
-		reinterpret_cast<char8_t const*>(p_utf8_string.data()),
-		p_utf8_string.size(),
+		reinterpret_cast<char8_t const*>(utf8_string.data()),
+		utf8_string.size(),
 	};
 }
-
-/*
-	This is a concept representing any UTF-8, UTF-16 or UTF-32 character code point.
-	It is true for char, char8_t, char16_t or wchar_t character types.
-*/
-template<typename T>
-concept IsCharacter = IsAnyOf<T, char, char8_t, char16_t, char32_t, wchar_t>;
 
 /*
 	Converts a range of contiguous characters to a std::basic_string_view.
@@ -142,13 +154,12 @@ template<
 		even when the base type is contiguous, so we can't use that constraint.
 	*/
 	std::ranges::range _Range,
-	IsCharacter _Char = std::ranges::range_value_t<_Range>,
-	typename _StringView = std::basic_string_view<_Char>
->
+	IsAnyOf<char8_t, char> _Char = std::ranges::range_value_t<_Range>
+> 
 [[nodiscard]] 
-constexpr auto range_to_string_view(_Range const& p_range) -> _StringView
+constexpr auto range_to_string_view(_Range const& range) -> std::basic_string_view<_Char>
 {
-	return {&*p_range.begin(), static_cast<_StringView::size_type>(std::ranges::distance(p_range))};
+	return {&*range.begin(), static_cast<std::string_view::size_type>(std::ranges::distance(range))};
 }
 
 //---------------------------------------------------------
@@ -157,14 +168,14 @@ constexpr auto range_to_string_view(_Range const& p_range) -> _StringView
 	Copies a sized range to a std::basic_string of any type.
 */
 template<
-	std::ranges::sized_range _Range, 
-	IsCharacter _Char = std::ranges::range_value_t<_Range>,
+	std::ranges::sized_range _Range,
+	IsAnyOf<char8_t, char> _Char = std::ranges::range_value_t<_Range>,
 	typename _String = std::basic_string<_Char>
->
+> 
 [[nodiscard]]
-inline auto range_to_string(_Range const& p_range) -> _String {
-	auto result = _String(p_range.size(), static_cast<_Char>(0));
-	std::ranges::copy(p_range, result.begin());
+inline auto range_to_string(_Range const& range) -> _String {
+	auto result = _String(range.size(), static_cast<_Char>(0));
+	std::ranges::copy(range, result.begin());
 	return result;
 }
 
@@ -172,14 +183,14 @@ inline auto range_to_string(_Range const& p_range) -> _String {
 	Copies a range of unknown size to a std::basic_string of any type.
 */
 template<
-	std::ranges::range _Range, 
-	IsCharacter _Char = std::ranges::range_value_t<_Range>,
-	typename _String = std::basic_string<_Char>
->
+	std::ranges::range _Range,
+	IsAnyOf<char8_t, char> _Char = std::ranges::range_value_t<_Range>,
+	typename _String = std::basic_string_view<_Char>
+> 
 [[nodiscard]]
-inline auto range_to_string(_Range const& p_range) -> _String {
-	auto result = _String{};
-	std::ranges::copy(p_range, std::back_inserter(result));
+inline auto range_to_string(_Range const& range) -> _String {
+	auto result = _String();
+	std::ranges::copy(range, std::back_inserter(result));
 	return result;
 }
 
@@ -199,12 +210,12 @@ template<
 >
 [[nodiscard]]
 constexpr auto find_if(
-	_Range&& p_range, 
-	_Predicate&& p_predicate
+	_Range&& range, 
+	_Predicate&& predicate
 ) noexcept -> std::optional<_Iterator>
 {
-	if (auto const end = p_range.end(), 
-	               pos = std::ranges::find_if(std::forward<_Range>(p_range), std::forward<_Predicate>(p_predicate));
+	if (auto const end = range.end(), 
+	               pos = std::ranges::find_if(std::forward<_Range>(range), std::forward<_Predicate>(predicate));
 		pos == end)
 	{
 		return {};
@@ -216,71 +227,113 @@ constexpr auto find_if(
 
 constexpr auto ascii_lowercase_transform = std::views::transform([](char c) { return static_cast<char>(std::tolower(c)); });
 
+constexpr auto equal_ascii_case_insensitive(
+	std::string_view const lhs, std::string_view const rhs
+) noexcept -> bool 
+{
+	return std::ranges::equal(lhs | ascii_lowercase_transform, rhs | ascii_lowercase_transform);
+}
+
 //---------------------------------------------------------
+
+using Port = int;
+
+enum class Protocol : Port {
+	Http = 80,
+	Https = 443,
+	Ftp = 21,
+	Sftp = 22,
+	Unknown = -1, 
+};
+
+constexpr auto get_protocol_port(Protocol protocol) noexcept -> Port {
+	return static_cast<Port>(protocol);
+}
+
+inline auto get_protocol_from_string(std::u8string_view const protocol_string) noexcept -> Protocol 
+{
+	if (auto const ascii_string = u8string_to_utf8_string(protocol_string);
+		equal_ascii_case_insensitive(ascii_string, "http")) 
+	{
+		return Protocol::Http;
+	}
+	else if (equal_ascii_case_insensitive(ascii_string, "https")) {
+		return Protocol::Https;
+	}
+	else if (equal_ascii_case_insensitive(ascii_string, "ftp")) {
+		return Protocol::Ftp;
+	}
+	else if (equal_ascii_case_insensitive(ascii_string, "sftp")) {
+		return Protocol::Sftp;
+	}
+	return Protocol::Unknown;
+}
 
 /*
 	The result of the split_url function.
 */
-template<utils::IsCharacter _Char>
 struct SplitUrl {
-	std::basic_string_view<_Char> domain_name, path;
+	Protocol protocol{Protocol::Unknown};
+	std::u8string_view domain_name, path;
 };
-
-template<utils::IsCharacter _Char>
-constexpr auto forward_slash = utils::select_on_type<_Char>('/', u8'/', u'/', U'/', L'/');
 
 /*
 	Splits an URL into a server/domain name and file path.
 */
-template<IsCharacter _Char>
 [[nodiscard]] 
-constexpr auto split_url(std::basic_string_view<_Char> const p_url) noexcept 
-	-> SplitUrl<_Char> 
+inline auto split_url(std::u8string_view const url) noexcept -> SplitUrl 
 {
-	if (p_url.empty()) {
+	if (url.empty()) {
 		return {};
 	}
 	
-	constexpr auto colon = select_on_type<_Char>(':', u8':', u':', U':', L':');
+	constexpr auto whitespace_characters = std::u8string_view{u8" \t\r\n"};
+	auto start_position = url.find_first_not_of(whitespace_characters);
+	if (start_position == std::u8string_view::npos) {
+		return {};
+	}
 	
-	constexpr auto minimum_split_pos = size_t{2};
-	
-	auto start_pos = size_t{};
-	do {
-		if (auto const pos = p_url.find(forward_slash<_Char>, start_pos ? start_pos : minimum_split_pos);
-			pos == std::string_view::npos) 
-		{
-			return {p_url.substr(start_pos), {}};
-		}
-		else if (auto const last = p_url[pos - 1];
-			last != colon && last != forward_slash<_Char>) 
-		{
-			return {p_url.substr(start_pos, pos - start_pos), p_url.substr(pos)};
-		}
-		else {
-			start_pos = pos + 1;
-		}
-	} while (true);
+	auto result = SplitUrl{};
+
+	constexpr auto protocol_suffix = std::u8string_view{u8"://"};
+	if (auto const position = url.find(protocol_suffix, start_position);
+		position != std::u8string_view::npos) 
+	{
+		result.protocol = get_protocol_from_string(url.substr(start_position, position - start_position));
+		start_position = position + protocol_suffix.length();
+	}
+
+	if (auto const position = url.find(u8'/', start_position);
+		position != std::u8string_view::npos)
+	{
+		result.domain_name = url.substr(start_position, position - start_position);
+		start_position = position;
+	}
+	else {
+		result.domain_name = url.substr(start_position);
+		return result;
+	}
+
+	auto const end_position = url.find_last_not_of(whitespace_characters) + 1;
+	result.path = url.substr(start_position, end_position - start_position);
+	return result;
 }
 
 /*
+	Returns the file name part of a URL (or file path with only forward slashes).
 */
-template<IsCharacter _Char>
-constexpr auto extract_filename(std::basic_string_view<_Char> const p_url) noexcept
-	-> std::basic_string_view<_Char>
+constexpr auto extract_filename(std::u8string_view const url) noexcept -> std::u8string_view
 {
-	if (auto const slash_pos = p_url.rfind(forward_slash<_Char>);
-		slash_pos != std::string_view::npos)
+	if (auto const slash_pos = url.rfind(u8'/');
+		slash_pos != std::u8string_view::npos)
 	{
-		constexpr auto question_mark = select_on_type<_Char>('?', u8'?', u'?', U'?', L'?');
-
-		if (auto const question_mark_pos = p_url.find(question_mark, slash_pos + 1);
-			question_mark_pos != std::string_view::npos)
+		if (auto const question_mark_pos = url.find(u8'?', slash_pos + 1);
+			question_mark_pos != std::u8string_view::npos)
 		{
-			return p_url.substr(slash_pos + 1, question_mark_pos - slash_pos - 1);
+			return url.substr(slash_pos + 1, question_mark_pos - slash_pos - 1);
 		}
 
-		return p_url.substr(slash_pos + 1);
+		return url.substr(slash_pos + 1);
 	}
 	return {};
 }
@@ -333,6 +386,36 @@ enum class ConnectionFailed {
 
 //---------------------------------------------------------
 
+class Socket {
+public:
+	auto send_data(std::span<std::byte> data) -> void;
+	auto send_string(std::u8string_view string) -> void;
+
+	auto receive_data() -> std::vector<std::byte>;
+	auto receive_string() -> std::u8string;
+
+	Socket(); // = default in .cpp
+	Socket(Socket&&); // = default in .cpp
+	auto operator=(Socket&&) -> Socket&; // = default in .cpp
+	Socket(Socket const&) = delete;
+	auto operator=(Socket const&) -> Socket& = delete;
+
+	~Socket(); // = default in .cpp
+
+private:
+	class Implementation;
+	std::unique_ptr<Implementation> m_implementation;
+	
+	Socket(std::u8string_view server, utils::Port port);
+	friend auto open_socket(std::u8string_view server, utils::Port port) -> Socket;
+};
+
+inline auto open_socket(std::u8string_view const server, utils::Port const port) -> Socket {
+	return Socket{server, port};
+}
+
+//---------------------------------------------------------
+
 namespace http {
 
 struct Header;
@@ -382,202 +465,14 @@ auto operator==(IsHeader auto const& lhs, IsHeader auto const& rhs) -> bool {
 	) && lhs.value == rhs.value;
 }
 
-//---------------------------------------------------------
-
-/*
-	Represents the response of a HTTP "GET" request.
-*/
-class GetResponse {
-	friend class GetRequest;
-	
-private:
-	class Implementation;
-	std::unique_ptr<Implementation> m_implementation;
-
-	GetResponse(std::unique_ptr<Implementation> p_implementation);
-
-public:
-	GetResponse(GetResponse&&); // = default in .cpp
-	auto operator=(GetResponse&&) -> GetResponse&; // = default in .cpp
-	GetResponse(GetResponse const&) = delete;
-	auto operator=(GetResponse const&) -> GetResponse& = delete;
-
-	~GetResponse(); // = default in .cpp
-
-	/*
-		Returns the headers of the GET response as Header objects.
-		The returned span shall not outlive this GetResponse object.
-		I wish there was a way to statically enforce this in c++.
-	*/
-	[[nodiscard]] 
-	auto get_headers() const -> std::span<Header>;
-	/*
-		Returns the headers of the GET response as a string.
-		The returned string_view shall not outlive this GetResponse object.
-		I wish there was a way to statically enforce this in c++.
-	*/
-	[[nodiscard]] 
-	auto get_headers_string() const -> std::string_view;
-
-	/*
-		Returns a header of the GET response by its name.
-		The returned header shall not outlive this GetResponse object.
-		I wish there was a way to statically enforce this in c++.
-	*/	
-	[[nodiscard]] 
-	auto get_header(std::string_view header_name) const -> std::optional<Header>;
-	/*
-		Returns a header value of the GET response by its name.
-		The returned std::string_view shall not outlive this GetResponse object.
-		I wish there was a way to statically enforce this in c++.
-	*/
-	[[nodiscard]] 
-	auto get_header_value(std::string_view header_name) const -> std::optional<std::string_view>;
-	
-	/*
-		Returns the body of the GET response.
-		The returned std::span shall not outlive this GetResponse object.
-		I wish there was a way to statically enforce this in c++.
-	*/
-	[[nodiscard]] 
-	auto get_body() const -> std::span<std::byte>;
-	/*
-		Returns the body of the GET response as a string.
-		The returned std::u8string_view shall not outlive this GetResponse object.
-		I wish there was a way to statically enforce this in c++.
-	*/
-	[[nodiscard]] 
-	auto get_body_string() const -> std::u8string_view
-	{
-		auto const body = get_body();
-		return std::u8string_view{reinterpret_cast<char8_t const*>(body.data()), body.size()};
-	}
-
-	//TODO: support unicode file names by creating our own simple file I/O API. The standard library sucks at unicode.
-	
-	/*
-		Writes the body of the GET response to a file with the name file_name.
-	*/
-	auto write_body_to_file(std::string const& file_name) const -> void 
-	{
-		// std::string because std::ofstream does not take std::string_view.
-		auto const body = get_body();
-		auto file_stream = std::ofstream{file_name, std::ios::binary};
-		file_stream.write(reinterpret_cast<char const*>(body.data()), body.size());
-	}
-};
-
-//---------------------------------------------------------
-
-/*
-	Represents a "GET" request.
-	It is created by calling the http::get function.
-*/
-class GetRequest {
-private:
-	class Implementation;
-	std::unique_ptr<Implementation> m_implementation;
-
-public:
-	GetRequest(GetRequest&&); // = default in .cpp
-	auto operator=(GetRequest&&) -> GetRequest&; // = default in .cpp
-	GetRequest(GetRequest const&) = delete;
-	auto operator=(GetRequest const&) -> GetRequest& = delete;
-
-	~GetRequest(); // = default in .cpp
-
-	static constexpr auto default_user_agent = std::string_view{"Cpp20InternetClient"};
-
-	/*
-		Sets the name of the application that is sending the HTTP request.
-		The default value is GetRequest::default_user_agent.
-	*/
-	auto set_user_agent(std::string_view p_user_agent) && -> GetRequest&&;
-
-	/*
-		Adds headers to the GET request as a string.
-		These are in the format: "NAME: [ignored whitespace] VALUE"
-		The string can be multiple lines for multiple headers.
-		Non-ASCII bytes are considered opaque data,
-		according to the HTTP specification.
-	*/
-	auto add_headers(std::string_view p_headers) && -> GetRequest&&;
-	/*
-		Adds headers to the GET request.
-	*/
-	auto add_headers(std::span<Header const> const p_headers) && -> GetRequest&& {
-		auto headers_string = std::string{};
-		headers_string.reserve(p_headers.size()*128);
-		for (auto const header : p_headers) {
-			// TODO: Use std::format when it has been implemented by compilers.
-			(((headers_string += header.name) += ": ") += header.value) += "\r\n";
-		}
-		return std::move(*this).add_headers(headers_string);
-	}
-	/*
-		Adds headers to the GET request.
-	*/
-	auto add_headers(std::initializer_list<Header const> const p_headers) && -> GetRequest&& {
-		return std::move(*this).add_headers(std::span{p_headers});
-	}
-	/*
-		Adds headers to the GET request.
-		This is a variadic template that can take any number of headers.
-	*/
-	template<IsHeader ... T>
-	auto add_headers(T&& ... p_headers) && -> GetRequest&& {
-		auto const headers = std::array{Header{p_headers}...};
-		return std::move(*this).add_headers(std::span{headers});
-	}
-	/*
-		Adds a single header to the GET request.
-		Equivalent to add_headers with a single Header argument.
-	*/
-	auto add_header(Header p_header) && -> GetRequest&& {
-		return std::move(*this).add_headers(((std::string{p_header.name} += ": ") += p_header.value));
-	}
-
-	/*
-		Sends the GET request.
-	*/
-	[[nodiscard]] 
-	auto send() && -> GetResponse;
-
-private:
-	friend auto get(std::u8string_view p_url) -> GetRequest;
-	GetRequest(std::u8string_view p_url);
-};
-
-/*
-	Creates a GET request.
-	p_url is a URL to the server or resource that the GET request targets.
-*/
-[[nodiscard]] 
-inline auto get(std::u8string_view const p_url) -> GetRequest {
-	return GetRequest{p_url};
-}
-/*
-	Creates a GET request.
-	p_url is a URL to the server or resource that the GET request targets.
-*/
-[[nodiscard]] 
-inline auto get(std::string_view const p_url) -> GetRequest {
-	return get(utils::utf8_string_to_u8string(p_url));
-}
-
-//---------------------------------------------------------
-
-/*
-	These are algorithms that are used within the HTTP library.
-*/
 namespace algorithms {
 
 [[nodiscard]] 
-inline auto parse_headers_string(std::string_view const p_headers) -> std::vector<Header>
+inline auto parse_headers_string(std::string_view const headers) -> std::vector<Header>
 {
 	auto result = std::vector<Header>();
 
-	for (auto const line_range : std::views::split(p_headers, '\n')) {
+	for (auto const line_range : std::views::split(headers, '\n')) {
 		auto const line = utils::range_to_string_view(line_range);
 
 		if (auto const colon_pos = line.find(':');
@@ -608,6 +503,282 @@ inline auto parse_headers_string(std::string_view const p_headers) -> std::vecto
 }
 
 } // namespace algorithms
+
+//---------------------------------------------------------
+
+/*
+	Represents the response of a HTTP "GET" request.
+*/
+class GetResponse {
+	friend class GetRequest;
+
+private:
+	Socket m_socket;
+
+	std::optional<std::string> m_headers_string;
+	auto query_headers_string() const -> void {
+	}
+
+public:
+	/*
+		Returns the headers of the GET response as a string.
+		The returned string_view shall not outlive this GetResponse object.
+		I wish there was a way to statically enforce this in c++.
+	*/
+	[[nodiscard]] 
+	auto get_headers_string() const -> std::string_view {
+		if (!m_headers_string) {
+			query_headers_string();
+		}
+		return *m_headers_string;
+	}
+
+private:
+	std::optional<std::vector<Header>> mutable m_parsed_headers;
+
+	auto parse_headers() const -> void {
+		if (!m_headers_string) {
+			query_headers_string();
+		}
+		m_parsed_headers = algorithms::parse_headers_string(*m_headers_string);
+	}
+
+	[[nodiscard]]
+	auto find_header(std::string_view const name_to_find) const
+		-> std::optional<std::vector<Header>::iterator>
+	{
+		if (!m_parsed_headers) {
+			parse_headers();
+		}
+
+		auto const lowercase_name_to_search = utils::range_to_string(name_to_find | utils::ascii_lowercase_transform);
+		return utils::find_if(*m_parsed_headers, [&](auto const& header) {
+			return std::ranges::equal(lowercase_name_to_search, header.name | utils::ascii_lowercase_transform);
+		});
+	}
+
+public:
+	/*
+		Returns the headers of the GET response as Header objects.
+		The returned span shall not outlive this GetResponse object.
+		I wish there was a way to statically enforce this in c++.
+	*/
+	[[nodiscard]] 
+	auto get_headers() const -> std::span<Header> {
+		if (!m_parsed_headers) {
+			parse_headers();
+		}
+		return *m_parsed_headers;
+	}
+	/*
+		Returns a header of the GET response by its name.
+		The returned header shall not outlive this GetResponse object.
+		I wish there was a way to statically enforce this in c++.
+	*/	
+	[[nodiscard]] 
+	auto get_header(std::string_view const name) const -> std::optional<Header> {
+		if (auto const pos = find_header(name)) {
+			return **pos;
+		}
+		else {
+			return {};
+		}
+	}
+	/*
+		Returns a header value of the GET response by its name.
+		The returned std::string_view shall not outlive this GetResponse object.
+		I wish there was a way to statically enforce this in c++.
+	*/
+	[[nodiscard]] 
+	auto get_header_value(std::string_view const name) const -> std::optional<std::string_view> {
+		if (auto const pos = find_header(name)) {
+			return (*pos)->value;
+		}
+		else {
+			return {};
+		}
+	}
+	
+private:
+	std::optional<std::vector<std::byte>> mutable m_body;
+	auto read_response_body() const -> void {
+	}
+public:
+	/*
+		Returns the body of the GET response.
+		The returned std::span shall not outlive this GetResponse object.
+		I wish there was a way to statically enforce this in c++.
+	*/
+	[[nodiscard]]
+	auto get_body() const -> std::span<std::byte> {
+		if (!m_body) {
+			read_response_body();
+		}
+		return *m_body;
+	}
+	/*
+		Returns the body of the GET response as a string.
+		The returned std::u8string_view shall not outlive this GetResponse object.
+		I wish there was a way to statically enforce this in c++.
+	*/
+	[[nodiscard]] 
+	auto get_body_string() const -> std::u8string_view
+	{
+		auto const body = get_body();
+		return std::u8string_view{reinterpret_cast<char8_t const*>(body.data()), body.size()};
+	}
+
+	//TODO: support unicode file names by creating our own simple file I/O API. The standard library sucks at unicode.
+	
+	/*
+		Writes the body of the GET response to a file with the name file_name.
+	*/
+	auto write_body_to_file(std::string const& file_name) const -> void 
+	{
+		// std::string because std::ofstream does not take std::string_view.
+		auto const body = get_body();
+		auto file_stream = std::ofstream{file_name, std::ios::binary};
+		file_stream.write(reinterpret_cast<char const*>(body.data()), body.size());
+	}
+
+	GetResponse() = delete;
+	~GetResponse() = default;
+	
+	GetResponse(GetResponse&&) = default;
+	auto operator=(GetResponse&&) -> GetResponse& = default;
+
+	GetResponse(GetResponse const&) = delete;
+	auto operator=(GetResponse const&) -> GetResponse& = delete;
+
+private:
+	GetResponse(Socket&& socket) :
+		m_socket{std::move(socket)}
+	{}
+};
+
+//---------------------------------------------------------
+
+/*
+	Represents a "GET" request.
+	It is created by calling the http::get function.
+*/
+class GetRequest {
+private:
+	std::string m_user_agent = std::string{GetRequest::default_user_agent};
+
+public:
+	static constexpr auto default_user_agent = std::string_view{"Cpp20InternetClient"};
+
+	/*
+		Sets the name of the application that is sending the HTTP request.
+		The default value is GetRequest::default_user_agent.
+	*/
+	auto set_user_agent(std::string_view const user_agent) && -> GetRequest&& {
+		m_user_agent = user_agent;
+		return std::move(*this);
+	}
+
+private:
+	std::string m_headers;
+public:
+	/*
+		Adds headers to the GET request as a string.
+		These are in the format: "NAME: [ignored whitespace] VALUE"
+		The string can be multiple lines for multiple headers.
+		Non-ASCII bytes are considered opaque data,
+		according to the HTTP specification.
+	*/
+	auto add_headers(std::string_view const headers_string) && -> GetRequest&& {
+		if (headers_string.empty()) {
+			return std::move(*this);
+		}
+		m_headers += headers_string;
+		if (headers_string.back() != '\n') {
+			m_headers += "\r\n"; // CRLF is the correct line ending for the HTTP protocol
+		}
+		return std::move(*this);
+	}
+	/*
+		Adds headers to the GET request.
+	*/
+	auto add_headers(std::span<Header const> const headers) && -> GetRequest&& {
+		auto headers_string = std::string{};
+		headers_string.reserve(headers.size()*128);
+		for (auto const header : headers) {
+			// TODO: Use std::format when it has been implemented by compilers.
+			(((headers_string += header.name) += ": ") += header.value) += "\r\n";
+		}
+		return std::move(*this).add_headers(headers_string);
+	}
+	/*
+		Adds headers to the GET request.
+	*/
+	auto add_headers(std::initializer_list<Header const> const headers) && -> GetRequest&& {
+		return std::move(*this).add_headers(std::span{headers});
+	}
+	/*
+		Adds headers to the GET request.
+		This is a variadic template that can take any number of headers.
+	*/
+	template<IsHeader ... T>
+	auto add_headers(T&& ... p_headers) && -> GetRequest&& {
+		auto const headers = std::array{Header{p_headers}...};
+		return std::move(*this).add_headers(std::span{headers});
+	}
+	/*
+		Adds a single header to the GET request.
+		Equivalent to add_headers with a single Header argument.
+	*/
+	auto add_header(Header header) && -> GetRequest&& {
+		return std::move(*this).add_headers(((std::string{header.name} += ": ") += header.value));
+	}
+
+private:
+	utils::SplitUrl m_split_url;
+	Socket m_socket;
+
+public:
+	/*
+		Sends the GET request.
+	*/
+	[[nodiscard]] 
+	auto send() && -> GetResponse {
+		return GetResponse{std::move(m_socket)};
+	}
+
+	GetRequest() = delete;
+
+	GetRequest(GetRequest&&) = default;
+	auto operator=(GetRequest&&) -> GetRequest& = default;
+	GetRequest(GetRequest const&) = delete;
+	auto operator=(GetRequest const&) -> GetRequest& = delete;
+
+	~GetRequest() = default;
+
+private:
+	friend auto get(std::u8string_view url) -> GetRequest;
+	GetRequest(std::u8string_view url) :
+		m_split_url{utils::split_url(url)},
+		m_socket{open_socket(m_split_url.domain_name, utils::get_protocol_port(m_split_url.protocol))}
+	{}
+};
+
+/*
+	Creates a GET request.
+	url is a URL to the server or resource that the GET request targets.
+*/
+[[nodiscard]] 
+inline auto get(std::u8string_view const url) -> GetRequest {
+	return GetRequest{url};
+}
+/*
+	Creates a GET request.
+	url is a URL to the server or resource that the GET request targets.
+*/
+[[nodiscard]] 
+inline auto get(std::string_view const url) -> GetRequest {
+	return get(utils::utf8_string_to_u8string(url));
+}
 
 } // namespace http
 

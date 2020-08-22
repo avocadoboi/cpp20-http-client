@@ -6,7 +6,8 @@ set(CMAKE_CXX_STANDARD 20)
 #-----------------------------
 
 if (WIN32)
-	link_libraries(Wininet)
+	# Windows sockets 2
+	link_libraries(Ws2_32)
 endif (WIN32)
 
 #-----------------------------
