@@ -17,7 +17,7 @@ add_executable(cpp20_internet_client_test cpp20_internet_client.cpp ${test_sourc
 
 #-----------------------------
 
-add_executable(cpp20_internet_client cpp20_internet_client.cpp examples/get_request.cpp)
+add_executable(cpp20_internet_client cpp20_internet_client.cpp examples/sockets.cpp)
 
 #-----------------------------
 # All targets

@@ -164,6 +164,10 @@ constexpr auto range_to_string_view(_Range const& range) -> std::basic_string_vi
 
 //---------------------------------------------------------
 
+auto enable_utf8_console() -> void;
+
+//---------------------------------------------------------
+
 /*
 	Copies a sized range to a std::basic_string of any type.
 */
@@ -366,10 +370,7 @@ namespace errors {
 */
 struct InvalidUrl {};
 
-/*
-	The requested item was not found on the server.
-*/
-struct ItemNotFound {};
+struct ServerNotFound {};
 
 /*
 	The connection to the server failed in some way.
@@ -388,11 +389,17 @@ enum class ConnectionFailed {
 
 class Socket {
 public:
-	auto send_data(std::span<std::byte> data) -> void;
-	auto send_string(std::u8string_view string) -> void;
+	auto send_data(std::span<std::byte const> data) const -> void;
+	auto send_string(std::u8string_view string) const -> void;
 
-	auto receive_data() -> std::vector<std::byte>;
-	auto receive_string() -> std::u8string;
+	auto receive_data() const -> std::vector<std::byte>;
+	auto receive_string() const -> std::u8string;
+
+	/*
+		Receives a packet from the server and writes the data to "packet".
+		Returns the number of bytes that were read.
+	*/
+	auto receive_packet(std::span<std::byte> packet) const -> size_t;
 
 	Socket(); // = default in .cpp
 	Socket(Socket&&); // = default in .cpp

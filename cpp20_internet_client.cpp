@@ -30,6 +30,9 @@ SOFTWARE.
 #include <array>
 #include <system_error>
 
+// debugging
+#include <iostream>
+
 //---------------------------------------------------------
 
 #ifdef _WIN32
@@ -45,6 +48,12 @@ namespace internet_client {
 
 // Platform-specific utilities
 namespace utils {
+
+auto enable_utf8_console() -> void {
+#ifdef _WIN32
+	SetConsoleOutputCP(CP_UTF8);
+#endif
+}
 
 #ifdef _WIN32
 namespace win {
@@ -148,13 +157,16 @@ class SocketHandle {
 private:
 	SOCKET m_handle{INVALID_SOCKET};
 
-	auto close() -> void {
+	auto close() const -> void {
 		if (m_handle != INVALID_SOCKET) {
 			closesocket(m_handle);
 		}
 	}
 public:
-	operator SOCKET() {
+	explicit operator SOCKET() const {
+		return m_handle;
+	}
+	auto get() const -> SOCKET {
 		return m_handle;
 	}
 
@@ -188,20 +200,12 @@ public:
 };
 
 class Socket::Implementation {
-public:
-	auto send_data(std::span<std::byte> data) -> void {
-
-	}
-	auto send_string(std::u8string_view string) -> void {
-
-	}
-	
 private:
 	WinSockLifetime m_api_lifetime;
 	
 	SocketHandle m_handle;
 
-	auto get_address_info(std::u8string_view const server, utils::Port const port) 
+	static auto get_address_info(std::u8string_view const server, utils::Port const port) 
 	{
 		auto const wide_server_name = utils::win::utf8_to_wide(server);
 		auto const wide_port_string = std::to_wstring(port);
@@ -217,69 +221,141 @@ private:
 			wide_port_string.data(), 
 			&hints, &address_info
 		)) {
-			if (result != EAI_AGAIN) {
-				utils::win::throw_error("Failed to get address info for socket creation ", result);
+			if (result == EAI_AGAIN) {
+				continue;
+			}
+			else if (result == WSAHOST_NOT_FOUND) {
+				throw errors::ServerNotFound{};
+			}
+			else {
+				utils::win::throw_error("Failed to get address info for socket creation", result);
 			}
 		}
 
 		return std::unique_ptr<addrinfoW, decltype([](auto p){FreeAddrInfoW(p);})>{address_info};
 	}
 
-	auto create_handle(std::u8string_view const server, utils::Port const port) -> SOCKET 
+	static auto create_handle(std::u8string_view const server, utils::Port const port) -> SocketHandle 
 	{
 		auto const address_info = get_address_info(server, port);
 		
-		constexpr auto milliseconds_to_wait_between_attempts = 1;
+		auto const handle_error = [](auto error_message) {
+			if (auto const error_code = WSAGetLastError(); error_code != WSAEINPROGRESS) {
+				utils::win::throw_error(error_message, error_code);
+			}
+			constexpr auto milliseconds_to_wait_between_attempts = 1;
+			Sleep(milliseconds_to_wait_between_attempts);
+		};
 
 		auto socket_handle = SocketHandle{};
-		while ((socket_handle = socket(address_info->ai_family, address_info->ai_socktype, address_info->ai_protocol)) == INVALID_SOCKET) 
+		while ((socket_handle = socket(address_info->ai_family, address_info->ai_socktype, address_info->ai_protocol)).get() == INVALID_SOCKET) 
 		{
-			if (auto const error_code = WSAGetLastError(); error_code != WSAEINPROGRESS) {
-				utils::win::throw_error("Failed to create socket ", error_code);
-			}
-			Sleep(milliseconds_to_wait_between_attempts);
+			handle_error("Failed to create socket");
 		}
 
-		while (connect(socket_handle, address_info->ai_addr, static_cast<int>(address_info->ai_addrlen)) == SOCKET_ERROR)
+		while (connect(socket_handle.get(), address_info->ai_addr, static_cast<int>(address_info->ai_addrlen)) == SOCKET_ERROR)
 		{
-			if (auto const error_code = WSAGetLastError(); error_code != WSAEINPROGRESS) {
-				utils::win::throw_error("Failed to connect socket ", error_code);
-			}
-			Sleep(milliseconds_to_wait_between_attempts);
+			handle_error("Failed to connect socket");
 		}
 
 		return socket_handle;
 	}
 
 public:
-	Implementation(std::u8string_view server, utils::Port port) :
+	auto send_data(std::span<std::byte const> const data) -> void {
+		auto const bytes_sent = send(
+			m_handle.get(), 
+			reinterpret_cast<char const*>(data.data()), 
+			static_cast<int>(data.size()), 
+			0
+		);
+		if (bytes_sent == SOCKET_ERROR) {
+			utils::win::throw_error("Failed to send data through socket", WSAGetLastError());
+		}
+		if (shutdown(m_handle.get(), SD_SEND) == SOCKET_ERROR) {
+			utils::win::throw_error("Failed to shut down socket connection after sending data", WSAGetLastError());
+		}
+	}
+	auto send_string(std::u8string_view const string) -> void {
+		send_data({reinterpret_cast<std::byte const*>(string.data()), string.length()});
+	}
+
+private:
+	template<utils::IsAnyOf<std::vector<std::byte>, std::u8string> T>
+	auto receive_to_container() const -> T {
+		constexpr auto packet_size = 512;
+		
+		auto buffer = T();
+		auto buffer_offset = 0ull;
+		
+		while (true) {
+			buffer.resize(buffer_offset + packet_size);
+			if (auto const result = recv(m_handle.get(), reinterpret_cast<char*>(buffer.data() + buffer_offset), static_cast<int>(packet_size), 0); 
+				result > 0) 
+			{
+				buffer_offset += result;
+			} 
+			else if (result < 0) {
+				utils::win::throw_error("Failed to receive data through socket", WSAGetLastError());
+			}
+			else break;
+		}
+
+		buffer.resize(buffer_offset);
+
+		return buffer;
+	}
+
+public:
+	auto receive_data() const -> std::vector<std::byte> {
+		return receive_to_container<std::vector<std::byte>>();
+	}
+	auto receive_string() const -> std::u8string {
+		return receive_to_container<std::u8string>();
+	}
+
+	auto receive_packet(std::span<std::byte> packet) const -> size_t {
+		auto const result = recv(m_handle.get(), reinterpret_cast<char*>(packet.data()), packet.size(), 0);
+		if (result < 0) {
+			utils::win::throw_error("Failed to receive packet through socket", WSAGetLastError());
+		}
+		return result;
+	}
+	
+public:
+	Implementation(std::u8string_view const server, utils::Port const port) :
 		m_handle{create_handle(server, port)} 
 	{}
 };
 
 #endif
 
-auto Socket::send_data(std::span<std::byte> data) -> void {
+auto Socket::send_data(std::span<std::byte const> const data) const -> void {
 	m_implementation->send_data(data);
 }
-auto Socket::send_string(std::u8string_view string) -> void {
-
+auto Socket::send_string(std::u8string_view const string) const -> void {
+	m_implementation->send_string(string);
 }
 
-auto Socket::receive_data() -> std::vector<std::byte> {
-	return {};
+auto Socket::receive_data() const -> std::vector<std::byte> {
+	return m_implementation->receive_data();
 }
-auto Socket::receive_string() -> std::u8string {
-	return {};
+auto Socket::receive_string() const -> std::u8string {
+	return m_implementation->receive_string();
+}
+auto Socket::receive_packet(std::span<std::byte> packet) const -> size_t {
+	return m_implementation->receive_packet(packet);
 }
 
-Socket::Socket(std::u8string_view server, utils::Port port) :
+Socket::Socket(std::u8string_view const server, utils::Port const port) :
 	m_implementation{std::make_unique<Implementation>(server, port)}
 {}
 
 Socket::Socket() = default;
+
 Socket::Socket(Socket&&) = default;
 auto Socket::operator=(Socket&&) -> Socket& = default;
+
 Socket::~Socket() = default;
 
 } // namespace internet_client
