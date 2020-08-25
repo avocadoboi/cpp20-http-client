@@ -72,28 +72,8 @@ auto main() -> int {
 	try {
 		do_request();
 	}
-	catch (errors::InvalidUrl const&) {
-		std::cout << "The url was invalid.\n";
-	}
-	catch (errors::ItemNotFound const&) {
-		std::cout << "The requested file was not found.\n";
-	}
 	catch (errors::ConnectionFailed const& error) {
-		std::cout << "The connection failed: ";
-		switch (error) {
-			// TODO: add using enum declaration when GCC supports it.
-			// using enum error::ConnectionFailed;
-			using namespace errors;
-			case ConnectionFailed::NoInternet:
-				std::cout << "there was no internet connection.\n";
-				break;
-			case ConnectionFailed::Timeout:
-				std::cout << "the connection timed out.\n";
-				break;
-			case ConnectionFailed::Shutdown:
-				std::cout << "the connection shut down.\n";
-				break;
-		}
+		std::cout << "The connection failed, check your internet connection.\n";
 	}
 
 	std::cout << "\n\n";

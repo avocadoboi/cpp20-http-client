@@ -250,7 +250,7 @@ enum class Protocol : Port {
 	Unknown = -1, 
 };
 
-constexpr auto get_protocol_port(Protocol protocol) noexcept -> Port {
+constexpr auto get_port(Protocol protocol) noexcept -> Port {
 	return static_cast<Port>(protocol);
 }
 
@@ -370,36 +370,37 @@ namespace errors {
 */
 struct InvalidUrl {};
 
-struct ServerNotFound {};
-
 /*
 	The connection to the server failed in some way.
-	This is an enum class. To get more information about what
-	type of connection error it was, check the value.
+	For example, there is no internet connection or the server name is invalid.
 */
-enum class ConnectionFailed {
-	NoInternet, // There was no internet connection
-	Timeout, // The connection timed out
-	Shutdown, // The connection was shut down unexpectedly
-};
+struct ConnectionFailed {};
 
 } // namespace errors
 
 //---------------------------------------------------------
 
+struct SocketResponse {
+	std::vector<std::byte> data;
+
+	template<utils::IsAnyOf<char, char8_t> T = char8_t>
+	auto as_string() const -> std::basic_string_view<T> {
+		return {reinterpret_cast<T const*>(data.data()), data.size()};
+	}
+};
+
 class Socket {
 public:
-	auto send_data(std::span<std::byte const> data) const -> void;
-	auto send_string(std::u8string_view string) const -> void;
-
-	auto receive_data() const -> std::vector<std::byte>;
-	auto receive_string() const -> std::u8string;
-
-	/*
-		Receives a packet from the server and writes the data to "packet".
-		Returns the number of bytes that were read.
-	*/
-	auto receive_packet(std::span<std::byte> packet) const -> size_t;
+	[[nodiscard]]
+	auto send(std::span<std::byte const> data) const -> SocketResponse;
+	[[nodiscard]]
+	auto send(std::u8string_view string) const -> SocketResponse {
+		return send(std::span{reinterpret_cast<std::byte const*>(string.data()), string.length()});
+	}
+	[[nodiscard]]
+	auto send(std::string_view string) const -> SocketResponse {
+		return send(std::span{reinterpret_cast<std::byte const*>(string.data()), string.length()});
+	}
 
 	Socket(); // = default in .cpp
 	Socket(Socket&&); // = default in .cpp
@@ -766,7 +767,7 @@ private:
 	friend auto get(std::u8string_view url) -> GetRequest;
 	GetRequest(std::u8string_view url) :
 		m_split_url{utils::split_url(url)},
-		m_socket{open_socket(m_split_url.domain_name, utils::get_protocol_port(m_split_url.protocol))}
+		m_socket{open_socket(m_split_url.domain_name, utils::get_port(m_split_url.protocol))}
 	{}
 };
 

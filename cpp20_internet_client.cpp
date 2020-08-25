@@ -260,7 +260,7 @@ private:
 				continue;
 			}
 			else if (result == WSAHOST_NOT_FOUND) {
-				throw errors::ServerNotFound{};
+				throw errors::ConnectionFailed{};
 			}
 			else {
 				utils::win::throw_error("Failed to get address info for socket creation", result);
@@ -270,8 +270,7 @@ private:
 		return std::unique_ptr<addrinfoW, decltype([](auto p){FreeAddrInfoW(p);})>{address_info};
 	}
 
-	static auto create_handle(std::u8string_view const server, utils::Port const port) -> SocketHandle 
-	{
+	static auto create_handle(std::u8string_view const server, utils::Port const port) -> SocketHandle {
 		auto const address_info = get_address_info(server, port);
 		
 		auto const handle_error = [](auto error_message) {
@@ -296,68 +295,44 @@ private:
 		return socket_handle;
 	}
 
+	auto receive_response() const -> SocketResponse {
+		constexpr auto packet_size = 512;
+		
+		auto buffer = std::vector<std::byte>(packet_size);
+		auto buffer_offset = 0ull;
+		
+		while (true) {
+			if (auto const result = recv(m_handle.get(), reinterpret_cast<char*>(buffer.data() + buffer_offset), static_cast<int>(packet_size), 0); 
+				result > 0) 
+			{
+				buffer_offset += result;
+				buffer.resize(buffer_offset + packet_size);
+			} 
+			else if (result < 0) {
+				utils::win::throw_error("Failed to receive data through socket");
+			}
+			else break;
+		}
+
+		return SocketResponse{.data=std::move(buffer)};
+	}
+
 public:
-	auto send_data(std::span<std::byte const> const data) -> void {
-		auto const bytes_sent = send(
+	auto send(std::span<std::byte const> const data) const -> SocketResponse {
+		if (::send(
 			m_handle.get(), 
 			reinterpret_cast<char const*>(data.data()), 
 			static_cast<int>(data.size()), 
 			0
-		);
-		if (bytes_sent == SOCKET_ERROR) {
+		) == SOCKET_ERROR) {
 			utils::win::throw_error("Failed to send data through socket", WSAGetLastError());
 		}
 		if (shutdown(m_handle.get(), SD_SEND) == SOCKET_ERROR) {
 			utils::win::throw_error("Failed to shut down socket connection after sending data", WSAGetLastError());
 		}
-	}
-	auto send_string(std::u8string_view const string) -> void {
-		send_data({reinterpret_cast<std::byte const*>(string.data()), string.length()});
-	}
-
-private:
-	template<utils::IsAnyOf<std::vector<std::byte>, std::u8string> T>
-	auto receive_to_container() const -> T {
-		constexpr auto packet_size = 512;
-		
-		auto buffer = T();
-		auto buffer_offset = 0ull;
-		
-		while (true) {
-			buffer.resize(buffer_offset + packet_size);
-			if (auto const result = recv(m_handle.get(), reinterpret_cast<char*>(buffer.data() + buffer_offset), static_cast<int>(packet_size), 0); 
-				result > 0) 
-			{
-				buffer_offset += result;
-			} 
-			else if (result < 0) {
-				utils::win::throw_error("Failed to receive data through socket", WSAGetLastError());
-			}
-			else break;
-		}
-
-		buffer.resize(buffer_offset);
-
-		return buffer;
-	}
-
-public:
-	auto receive_data() const -> std::vector<std::byte> {
-		return receive_to_container<std::vector<std::byte>>();
-	}
-	auto receive_string() const -> std::u8string {
-		return receive_to_container<std::u8string>();
-	}
-
-	auto receive_packet(std::span<std::byte> packet) const -> size_t {
-		auto const result = recv(m_handle.get(), reinterpret_cast<char*>(packet.data()), packet.size(), 0);
-		if (result < 0) {
-			utils::win::throw_error("Failed to receive packet through socket", WSAGetLastError());
-		}
-		return result;
+		return receive_response();
 	}
 	
-public:
 	Implementation(std::u8string_view const server, utils::Port const port) :
 		m_handle{create_handle(server, port)} 
 	{}
@@ -446,8 +421,8 @@ private:
 			if (result == EAI_AGAIN) {
 				continue;
 			}
-			else if (result == HOST_NOT_FOUND) {
-				throw errors::ServerNotFound{};
+			else if (result == EAI_NONAME) {
+				throw errors::ConnectionFailed{};
 			}
 			else {
 				utils::unix::throw_error("Failed to get address info for socket creation", result);
@@ -477,9 +452,31 @@ private:
 		return socket_handle;
 	}
 
+	auto receive_response() const -> SocketResponse {
+		constexpr auto packet_size = 512;
+		
+		auto buffer = std::vector<std::byte>(packet_size);
+		auto buffer_offset = 0ull;
+		
+		while (true) {
+			if (auto const result = recv(m_handle.get(), reinterpret_cast<char*>(buffer.data() + buffer_offset), static_cast<int>(packet_size), 0); 
+				result > 0) 
+			{
+				buffer_offset += result;
+				buffer.resize(buffer_offset + packet_size);
+			} 
+			else if (result < 0) {
+				utils::unix::throw_error("Failed to receive data through socket");
+			}
+			else break;
+		}
+
+		return SocketResponse{.data=std::move(buffer)};
+	}
+
 public:
-	auto send_data(std::span<std::byte const> const data) -> void {
-		if (send(
+	auto send(std::span<std::byte const> const data) const -> SocketResponse {
+		if (::send(
 			m_handle.get(), 
 			reinterpret_cast<char const*>(data.data()), 
 			static_cast<int>(data.size()), 
@@ -490,50 +487,7 @@ public:
 		if (shutdown(m_handle.get(), SHUT_WR) == -1) {
 			utils::unix::throw_error("Failed to shut down socket connection after sending data");
 		}
-	}
-	auto send_string(std::u8string_view const string) -> void {
-		send_data({reinterpret_cast<std::byte const*>(string.data()), string.length()});
-	}
-
-private:
-	template<utils::IsAnyOf<std::vector<std::byte>, std::u8string> T>
-	auto receive_to_container() const -> T {
-		constexpr auto packet_size = 512;
-		
-		auto buffer = T();
-		auto buffer_offset = 0ull;
-		
-		while (true) {
-			buffer.resize(buffer_offset + packet_size);
-			if (auto const result = recv(m_handle.get(), reinterpret_cast<char*>(buffer.data() + buffer_offset), static_cast<int>(packet_size), 0); 
-				result > 0) 
-			{
-				buffer_offset += result;
-			} 
-			else if (result < 0) {
-				utils::unix::throw_error("Failed to receive data through socket");
-			}
-			else break;
-		}
-
-		buffer.resize(buffer_offset);
-
-		return buffer;
-	}
-public:
-	auto receive_data() const -> std::vector<std::byte> {
-		return receive_to_container<std::vector<std::byte>>();
-	}
-	auto receive_string() const -> std::u8string {
-		return receive_to_container<std::u8string>();
-	}
-
-	auto receive_packet(std::span<std::byte> packet) const -> size_t {
-		auto const result = recv(m_handle.get(), reinterpret_cast<char*>(packet.data()), packet.size(), 0);
-		if (result < 0) {
-			utils::unix::throw_error("Failed to receive packet through socket");
-		}
-		return result;	
+		return receive_response();
 	}
 
 	Implementation(std::u8string_view const server, utils::Port const port) :
@@ -543,21 +497,8 @@ public:
 
 #endif // IS_POSIX
 
-auto Socket::send_data(std::span<std::byte const> const data) const -> void {
-	m_implementation->send_data(data);
-}
-auto Socket::send_string(std::u8string_view const string) const -> void {
-	m_implementation->send_string(string);
-}
-
-auto Socket::receive_data() const -> std::vector<std::byte> {
-	return m_implementation->receive_data();
-}
-auto Socket::receive_string() const -> std::u8string {
-	return m_implementation->receive_string();
-}
-auto Socket::receive_packet(std::span<std::byte> packet) const -> size_t {
-	return m_implementation->receive_packet(packet);
+auto Socket::send(std::span<std::byte const> const data) const -> SocketResponse {
+	return m_implementation->send(data);
 }
 
 Socket::Socket(std::u8string_view const server, utils::Port const port) :
