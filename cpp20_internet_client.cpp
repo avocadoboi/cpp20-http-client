@@ -367,13 +367,13 @@ public:
 
 #ifdef IS_POSIX
 
-using UnixSocketHandle = int;
+using PosixSocketHandle = int;
 
 class SocketHandle {
 private:
 	constexpr static auto invalid_handle = -1;
 
-	UnixSocketHandle m_handle{invalid_handle};
+	PosixSocketHandle m_handle{invalid_handle};
 
 	auto close() const -> void {
 		if (m_handle != invalid_handle) {
@@ -381,10 +381,10 @@ private:
 		}
 	}
 public:
-	explicit operator UnixSocketHandle() const {
+	explicit operator PosixSocketHandle() const {
 		return m_handle;
 	}
-	auto get() const -> UnixSocketHandle {
+	auto get() const -> PosixSocketHandle {
 		return m_handle;
 	}
 
@@ -400,10 +400,10 @@ public:
 		close();
 	}
 
-	explicit SocketHandle(UnixSocketHandle handle) :
+	explicit SocketHandle(PosixSocketHandle handle) :
 		m_handle{handle}
 	{}
-	auto operator=(UnixSocketHandle handle) -> SocketHandle& {
+	auto operator=(PosixSocketHandle handle) -> SocketHandle& {
 		close();
 		m_handle = handle;
 		return *this;
