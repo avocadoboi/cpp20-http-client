@@ -3,8 +3,6 @@
 
 using namespace internet_client;
 
-#include <windows.h>
-
 auto main() -> int {
 	utils::enable_utf8_console();
 	

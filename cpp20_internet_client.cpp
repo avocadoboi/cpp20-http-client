@@ -40,6 +40,22 @@ SOFTWARE.
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
+#elif __has_include(<unistd.h>) // This header must exist on platforms that conform to the POSIX specifications
+
+// The POSIX library is available on this platform.
+#define IS_POSIX
+
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <errno.h>
+#include <netdb.h>
+
+// Name clash
+#ifdef unix
+#undef unix
+#endif
+
 #endif
 
 //---------------------------------------------------------
@@ -53,6 +69,7 @@ auto enable_utf8_console() -> void {
 #ifdef _WIN32
 	SetConsoleOutputCP(CP_UTF8);
 #endif
+	// Pretty much everyone else uses utf-8 by default.
 }
 
 #ifdef _WIN32
@@ -130,6 +147,24 @@ auto throw_error(
 
 } // namespace win
 #endif // _WIN32
+
+#ifdef IS_POSIX
+
+namespace unix {
+
+auto throw_error(
+	std::string reason, 
+	int const error_code = errno
+) -> void 
+{
+	reason += " with code ";
+	reason += std::to_string(error_code);
+	throw std::system_error{error_code, std::generic_category(), reason};
+}
+
+} // namespace unix
+
+#endif // IS_POSIX
 
 } // namespace utils
 
@@ -328,7 +363,185 @@ public:
 	{}
 };
 
-#endif
+#endif // _WIN32
+
+#ifdef IS_POSIX
+
+using UnixSocketHandle = int;
+
+class SocketHandle {
+private:
+	constexpr static auto invalid_handle = -1;
+
+	UnixSocketHandle m_handle{invalid_handle};
+
+	auto close() const -> void {
+		if (m_handle != invalid_handle) {
+			::close(m_handle);
+		}
+	}
+public:
+	explicit operator UnixSocketHandle() const {
+		return m_handle;
+	}
+	auto get() const -> UnixSocketHandle {
+		return m_handle;
+	}
+
+	operator bool() const {
+		return m_handle != invalid_handle;
+	}
+	auto operator !() const -> bool {
+		return m_handle == invalid_handle;
+	}
+
+	SocketHandle() = default;
+	~SocketHandle() {
+		close();
+	}
+
+	explicit SocketHandle(UnixSocketHandle handle) :
+		m_handle{handle}
+	{}
+	auto operator=(UnixSocketHandle handle) -> SocketHandle& {
+		close();
+		m_handle = handle;
+		return *this;
+	}
+
+	SocketHandle(SocketHandle const&) = delete;
+	auto operator=(SocketHandle const&) -> SocketHandle& = delete;
+
+	SocketHandle(SocketHandle&& handle) :
+		m_handle{handle.m_handle} 
+	{
+		handle.m_handle = invalid_handle;
+	} 
+	auto operator=(SocketHandle&& handle) -> SocketHandle& {
+		m_handle = handle.m_handle;
+		handle.m_handle = invalid_handle;
+		return *this;
+	}
+};
+
+class Socket::Implementation {
+private:
+	SocketHandle m_handle;
+
+	static auto get_address_info(std::u8string const server, utils::Port const port) 
+	{
+		auto const port_string = std::to_string(port);
+		auto const hints = addrinfo{
+			.ai_family = AF_UNSPEC,
+			.ai_socktype = SOCK_STREAM,
+			.ai_protocol = IPPROTO_TCP,
+		};
+		auto address_info = static_cast<addrinfo*>(nullptr);
+
+		while (auto const result = ::getaddrinfo(
+			reinterpret_cast<char const*>(server.data()),
+			port_string.data(),
+			&hints, &address_info
+		)) {
+			if (result == EAI_AGAIN) {
+				continue;
+			}
+			else if (result == HOST_NOT_FOUND) {
+				throw errors::ServerNotFound{};
+			}
+			else {
+				utils::unix::throw_error("Failed to get address info for socket creation", result);
+			}
+		}
+
+		return std::unique_ptr<addrinfo, decltype([](auto p){freeaddrinfo(p);})>{address_info};
+	}
+
+	static auto create_handle(std::u8string_view const server, utils::Port const port) -> SocketHandle {
+		auto const address_info = get_address_info(std::u8string{server}, port);
+		
+		auto socket_handle = SocketHandle{::socket(address_info->ai_family, address_info->ai_socktype, address_info->ai_protocol)};
+
+		if (!socket_handle) {
+			utils::unix::throw_error("Failed to create socket");
+		}
+		
+		while (::connect(socket_handle.get(), address_info->ai_addr, static_cast<int>(address_info->ai_addrlen)) == -1)
+		{
+			if (auto const error_code = errno; error_code != EINPROGRESS) {
+				utils::unix::throw_error("Failed to connect socket", error_code);
+			}
+			constexpr auto milliseconds_to_wait_between_attempts = 1;
+			sleep(milliseconds_to_wait_between_attempts);
+		}
+		return socket_handle;
+	}
+
+public:
+	auto send_data(std::span<std::byte const> const data) -> void {
+		if (send(
+			m_handle.get(), 
+			reinterpret_cast<char const*>(data.data()), 
+			static_cast<int>(data.size()), 
+			0
+		) == -1) {
+			utils::unix::throw_error("Failed to send data through socket");
+		}
+		if (shutdown(m_handle.get(), SHUT_WR) == -1) {
+			utils::unix::throw_error("Failed to shut down socket connection after sending data");
+		}
+	}
+	auto send_string(std::u8string_view const string) -> void {
+		send_data({reinterpret_cast<std::byte const*>(string.data()), string.length()});
+	}
+
+private:
+	template<utils::IsAnyOf<std::vector<std::byte>, std::u8string> T>
+	auto receive_to_container() const -> T {
+		constexpr auto packet_size = 512;
+		
+		auto buffer = T();
+		auto buffer_offset = 0ull;
+		
+		while (true) {
+			buffer.resize(buffer_offset + packet_size);
+			if (auto const result = recv(m_handle.get(), reinterpret_cast<char*>(buffer.data() + buffer_offset), static_cast<int>(packet_size), 0); 
+				result > 0) 
+			{
+				buffer_offset += result;
+			} 
+			else if (result < 0) {
+				utils::unix::throw_error("Failed to receive data through socket");
+			}
+			else break;
+		}
+
+		buffer.resize(buffer_offset);
+
+		return buffer;
+	}
+public:
+	auto receive_data() const -> std::vector<std::byte> {
+		return receive_to_container<std::vector<std::byte>>();
+	}
+	auto receive_string() const -> std::u8string {
+		return receive_to_container<std::u8string>();
+	}
+
+	auto receive_packet(std::span<std::byte> packet) const -> size_t {
+		auto const result = recv(m_handle.get(), reinterpret_cast<char*>(packet.data()), packet.size(), 0);
+		if (result < 0) {
+			utils::unix::throw_error("Failed to receive packet through socket");
+		}
+		return result;	
+	}
+
+	Implementation(std::u8string_view const server, utils::Port const port) :
+		m_handle{create_handle(server, port)}
+	{}
+};
+
+#endif // IS_POSIX
 
 auto Socket::send_data(std::span<std::byte const> const data) const -> void {
 	m_implementation->send_data(data);
