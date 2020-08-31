@@ -26,6 +26,7 @@ SOFTWARE.
 
 //---------------------------------------------------------
 
+#include <variant>
 #include <span>
 #include <array>
 #include <system_error>
@@ -45,6 +46,8 @@ SOFTWARE.
 // The POSIX library is available on this platform.
 #define IS_POSIX
 
+#include <openssl/ssl.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
@@ -363,7 +366,7 @@ public:
 		return m_handle;
 	}
 
-	operator bool() const {
+	explicit operator bool() const {
 		return m_handle != invalid_handle;
 	}
 	auto operator !() const -> bool {
@@ -399,7 +402,7 @@ public:
 	}
 };
 
-class Socket::Implementation {
+class RawSocket {
 private:
 	SocketHandle m_handle;
 
@@ -436,7 +439,6 @@ private:
 		auto const address_info = get_address_info(std::u8string{server}, port);
 		
 		auto socket_handle = SocketHandle{::socket(address_info->ai_family, address_info->ai_socktype, address_info->ai_protocol)};
-
 		if (!socket_handle) {
 			utils::unix::throw_error("Failed to create socket");
 		}
@@ -449,6 +451,7 @@ private:
 			constexpr auto milliseconds_to_wait_between_attempts = 1;
 			sleep(milliseconds_to_wait_between_attempts);
 		}
+
 		return socket_handle;
 	}
 
@@ -490,8 +493,94 @@ public:
 		return receive_response();
 	}
 
-	Implementation(std::u8string_view const server, utils::Port const port) :
+	RawSocket(std::u8string_view const server, utils::Port const port) :
 		m_handle{create_handle(server, port)}
+	{}
+};
+
+class TlsSocket {
+	using OpenSslContext = std::unique_ptr<SSL_CTX, decltype([](auto x){SSL_CTX_free(x);})>;
+	OpenSslContext m_ssl_context{SSL_CTX_new(TLS_method())};
+
+	using OpenSslSocketHandle = std::unique_ptr<BIO, decltype([](auto a){BIO_free_all(a);})>;
+	OpenSslSocketHandle m_handle;
+
+	auto create_handle(std::u8string_view const server, utils::Port const port) const -> OpenSslSocketHandle {
+		SSL_CTX_set_verify(m_ssl_context.get(), SSL_VERIFY_PEER, nullptr);
+		SSL_CTX_set_options(m_ssl_context.get(), SSL_OP_ALL);
+
+		auto const server_utf8_string = std::string{utils::u8string_to_utf8_string(server)};
+		auto const server_with_port = server_utf8_string + ':' + std::to_string(port);
+
+		auto const handle = BIO_new_ssl_connect(m_ssl_context.get());
+		BIO_set_conn_hostname(handle, server_with_port.data());
+
+		auto const ssl = static_cast<SSL*>(nullptr);
+		BIO_get_ssl(handle, &ssl);
+
+		SSL_set_tlsext_host_name(ssl, server_utf8_string.data());
+		
+		return OpenSslSocketHandle{handle};
+	}
+
+public:
+	auto send(std::span<std::byte const> const data) const -> SocketResponse {
+		return {};
+	}
+
+	TlsSocket(std::u8string_view const server, utils::Port const port) :
+		m_handle{create_handle(server, port)} 
+	{}
+};
+
+class SshSocket {
+	SocketHandle m_handle;
+
+	static auto create_handle(std::u8string_view const server, utils::Port const port) -> SocketHandle {
+		return {};
+	}
+	
+public:
+	auto send(std::span<std::byte const> const data) const -> SocketResponse {
+		return {};
+	}
+
+	SshSocket(std::u8string_view const server, utils::Port const port) :
+		m_handle{create_handle(server, port)} 
+	{}
+};
+
+class Socket::Implementation {
+private:
+	using SocketVariant = std::variant<RawSocket, TlsSocket, SshSocket>;
+	SocketVariant m_socket;
+
+	static auto select_socket(std::u8string_view const server, utils::Port const port)
+		-> SocketVariant
+	{
+		switch (port) {
+		case utils::get_port(utils::Protocol::Https):
+			return TlsSocket{server, port};
+		case utils::get_port(utils::Protocol::Sftp):
+			return SshSocket{server, port};
+		default:
+			return RawSocket{server, port};
+		}
+	}
+
+public:
+	auto send(std::span<std::byte const> const data) const -> SocketResponse {
+		if (std::holds_alternative<RawSocket>(m_socket)) {
+			return std::get<RawSocket>(m_socket).send(data);
+		}
+		else if (std::holds_alternative<TlsSocket>(m_socket)) {
+			return std::get<TlsSocket>(m_socket).send(data);
+		}
+		return std::get<SshSocket>(m_socket).send(data);
+	}
+	
+	Implementation(std::u8string_view const server, utils::Port const port) :
+		m_socket{select_socket(server, port)}
 	{}
 };
 
@@ -506,10 +595,9 @@ Socket::Socket(std::u8string_view const server, utils::Port const port) :
 {}
 
 Socket::Socket() = default;
+Socket::~Socket() = default;
 
 Socket::Socket(Socket&&) = default;
 auto Socket::operator=(Socket&&) -> Socket& = default;
-
-Socket::~Socket() = default;
 
 } // namespace internet_client
