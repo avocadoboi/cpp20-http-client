@@ -478,6 +478,10 @@ private:
 	}
 
 public:
+	auto get_posix_handle() -> PosixSocketHandle {
+		return m_handle.get();
+	}
+
 	auto send(std::span<std::byte const> const data) const -> SocketResponse {
 		if (::send(
 			m_handle.get(), 
@@ -499,73 +503,129 @@ public:
 };
 
 class TlsSocket {
-	using OpenSslContext = std::unique_ptr<SSL_CTX, decltype([](auto x){SSL_CTX_free(x);})>;
-	OpenSslContext m_ssl_context{SSL_CTX_new(TLS_method())};
-
-	using OpenSslSocketHandle = std::unique_ptr<BIO, decltype([](auto a){BIO_free_all(a);})>;
-	OpenSslSocketHandle m_handle;
-
-	auto create_handle(std::u8string_view const server, utils::Port const port) const -> OpenSslSocketHandle {
-		SSL_CTX_set_verify(m_ssl_context.get(), SSL_VERIFY_PEER, nullptr);
-		SSL_CTX_set_options(m_ssl_context.get(), SSL_OP_ALL);
-
-		auto const server_utf8_string = std::string{utils::u8string_to_utf8_string(server)};
-		auto const server_with_port = server_utf8_string + ':' + std::to_string(port);
-
-		auto const handle = BIO_new_ssl_connect(m_ssl_context.get());
-		BIO_set_conn_hostname(handle, server_with_port.data());
-
-		auto const ssl = static_cast<SSL*>(nullptr);
-		BIO_get_ssl(handle, &ssl);
-
-		SSL_set_tlsext_host_name(ssl, server_utf8_string.data());
-		
-		return OpenSslSocketHandle{handle};
-	}
-
-public:
-	auto send(std::span<std::byte const> const data) const -> SocketResponse {
-		return {};
-	}
-
-	TlsSocket(std::u8string_view const server, utils::Port const port) :
-		m_handle{create_handle(server, port)} 
-	{}
-};
-
-class SshSocket {
-	SocketHandle m_handle;
-
-	static auto create_handle(std::u8string_view const server, utils::Port const port) -> SocketHandle {
-		return {};
+	static auto throw_tls_error() -> void {
+		throw errors::ConnectionFailed{.was_tls_failure = true};
 	}
 	
-public:
-	auto send(std::span<std::byte const> const data) const -> SocketResponse {
-		return {};
+	using TlsContext = std::unique_ptr<SSL_CTX, decltype([](auto x){SSL_CTX_free(x);})>;
+	TlsContext m_tls_context = []{
+		if (auto const method = TLS_method()) {
+			if (auto const tls = SSL_CTX_new(method)) {
+				return TlsContext{tls};
+			}
+		}
+		throw_tls_error();
+		return TlsContext{};
+	}();
+
+	using TlsConnection = std::unique_ptr<SSL, decltype([](auto x){SSL_free(x);})>;
+	TlsConnection m_tls_connection = [this]{
+		if (auto const tls_connection = SSL_new(m_tls_context.get())) {
+			return TlsConnection{tls_connection};
+		}
+		throw_tls_error();
+		return TlsConnection{};
+	}();
+
+	std::unique_ptr<RawSocket> m_raw_socket;
+
+	auto initialize_connection(std::u8string const server, utils::Port const port) -> void {
+		if (m_raw_socket) {
+			return;
+		}
+		
+		// The server certificate will be verified.
+		SSL_CTX_set_verify(m_tls_context.get(), SSL_VERIFY_PEER, nullptr);
+		// Include all workarounds for bugs in server implementations.
+		SSL_CTX_set_options(m_tls_context.get(), SSL_OP_ALL);
+
+		// Set the socket to be used by the tls connection
+		m_raw_socket = std::make_unique<RawSocket>(server, port);
+		if (1 != SSL_set_fd(m_tls_connection.get(), m_raw_socket->get_posix_handle())) {
+			throw_tls_error();
+		}
+
+		// For SNI (Server Name Identification)
+		if (1 != SSL_set_tlsext_host_name(m_tls_connection.get(), utils::u8string_to_utf8_string(server).data())) {
+			throw_tls_error();
+		}
+
+		if (1 != SSL_do_handshake(m_tls_connection.get())) {
+			throw_tls_error();
+		}
+
+		// Just to check that a certificate was presented by the server
+		if (auto const certificate = SSL_get_peer_certificate(m_tls_connection.get())) {
+			X509_free(certificate);
+		}
+		else {
+			throw_tls_error();
+		}
+
+		// Verify the result of the chain verification
+		if (X509_V_OK != SSL_get_verify_result(m_tls_connection.get())) {
+			throw_tls_error();
+		}
 	}
 
-	SshSocket(std::u8string_view const server, utils::Port const port) :
-		m_handle{create_handle(server, port)} 
-	{}
+	auto receive_response() const -> SocketResponse {
+		constexpr auto packet_size = 512;
+		
+		auto buffer = std::vector<std::byte>(packet_size);
+		auto buffer_offset = 0ull;
+		
+		while (true) {
+			if (auto const result = SSL_read(
+					m_tls_connection.get(), 
+					buffer.data() + buffer_offset, 
+					static_cast<int>(packet_size)
+				); result > 0) 
+			{
+				buffer_offset += result;
+				buffer.resize(buffer_offset + packet_size);
+			} 
+			else if (result < 0) {
+				utils::unix::throw_error("Failed to receive data through socket");
+			}
+			else break;
+		}
+
+		return SocketResponse{.data=std::move(buffer)};
+	}
+
+public:
+	auto send(std::span<std::byte const> const data) const -> SocketResponse {
+		
+		if (SSL_write(
+			m_tls_connection.get(), 
+			data.data(), 
+			static_cast<int>(data.size())
+		) == -1) {
+			utils::unix::throw_error("Failed to send data through socket");
+		}
+		if (SSL_shutdown(m_tls_connection.get()) < 0) {
+			utils::unix::throw_error("Failed to shut down socket connection after sending data");
+		}
+		return receive_response();
+	}
+
+	TlsSocket(std::u8string_view const server, utils::Port const port) {
+		initialize_connection(std::u8string{server}, port);
+	}
 };
 
 class Socket::Implementation {
 private:
-	using SocketVariant = std::variant<RawSocket, TlsSocket, SshSocket>;
+	using SocketVariant = std::variant<RawSocket, TlsSocket>;
 	SocketVariant m_socket;
 
 	static auto select_socket(std::u8string_view const server, utils::Port const port)
 		-> SocketVariant
 	{
-		switch (port) {
-		case utils::get_port(utils::Protocol::Https):
-			return TlsSocket{server, port};
-		case utils::get_port(utils::Protocol::Sftp):
-			return SshSocket{server, port};
-		default:
+		if (port == utils::get_port(utils::Protocol::Http)) {
 			return RawSocket{server, port};
 		}
+		return TlsSocket{server, port};
 	}
 
 public:
@@ -573,10 +633,7 @@ public:
 		if (std::holds_alternative<RawSocket>(m_socket)) {
 			return std::get<RawSocket>(m_socket).send(data);
 		}
-		else if (std::holds_alternative<TlsSocket>(m_socket)) {
-			return std::get<TlsSocket>(m_socket).send(data);
-		}
-		return std::get<SshSocket>(m_socket).send(data);
+		return std::get<TlsSocket>(m_socket).send(data);
 	}
 	
 	Implementation(std::u8string_view const server, utils::Port const port) :

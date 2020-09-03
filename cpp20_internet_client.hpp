@@ -46,14 +46,13 @@ internet_client {
 	http {
 		algorithms
 	}
-	ftp
 }
 */
 
 namespace internet_client {
 
 /*
-	This is everything that doesn't have anything to do with http or ftp specifically, 
+	This is everything that doesn't have anything to do with http specifically, 
 	but are utilities that are used within the library.
 */
 namespace utils {
@@ -245,8 +244,6 @@ using Port = int;
 enum class Protocol : Port {
 	Http = 80,
 	Https = 443,
-	Ftp = 21,
-	Sftp = 22,
 	Unknown = -1, 
 };
 
@@ -263,12 +260,6 @@ inline auto get_protocol_from_string(std::u8string_view const protocol_string) n
 	}
 	else if (equal_ascii_case_insensitive(ascii_string, "https")) {
 		return Protocol::Https;
-	}
-	else if (equal_ascii_case_insensitive(ascii_string, "ftp")) {
-		return Protocol::Ftp;
-	}
-	else if (equal_ascii_case_insensitive(ascii_string, "sftp")) {
-		return Protocol::Sftp;
 	}
 	return Protocol::Unknown;
 }
@@ -374,7 +365,9 @@ struct InvalidUrl {};
 	The connection to the server failed in some way.
 	For example, there is no internet connection or the server name is invalid.
 */
-struct ConnectionFailed {};
+struct ConnectionFailed {
+	bool was_tls_failure = false;
+};
 
 } // namespace errors
 
@@ -789,9 +782,5 @@ inline auto get(std::string_view const url) -> GetRequest {
 }
 
 } // namespace http
-
-namespace ftp {
-	
-} // namespace ftp
 
 } // namespace internet_client

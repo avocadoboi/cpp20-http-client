@@ -8,7 +8,9 @@ set(CMAKE_CXX_STANDARD 20)
 if (WIN32)
 	# Windows sockets 2
 	link_libraries(Ws2_32)
-endif (WIN32)
+else()
+	link_libraries(ssl crypto)
+endif()
 
 #-----------------------------
 
