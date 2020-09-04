@@ -348,9 +348,6 @@ constexpr auto get_is_allowed_uri_character(char const character) noexcept -> bo
 
 /*
 	A minimal collection of internet related errors you should catch and handle yourself.
-	They do not inherit from std::exception because these are made to be catched separately
-	and do not have default error messages. It's your responsibility to provide useful
-	error messages to the user and/or proper error handling.
 */
 namespace errors {
 
@@ -366,7 +363,7 @@ struct InvalidUrl {};
 	For example, there is no internet connection or the server name is invalid.
 */
 struct ConnectionFailed {
-	bool was_tls_failure = false;
+	bool was_tls_failure{};
 };
 
 } // namespace errors

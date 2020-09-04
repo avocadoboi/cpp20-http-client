@@ -47,6 +47,7 @@ SOFTWARE.
 #define IS_POSIX
 
 #include <openssl/ssl.h>
+#include <openssl/err.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -80,14 +81,14 @@ namespace win {
 
 auto utf8_to_wide(std::u8string_view const input) -> std::wstring {
 	auto result = std::wstring(MultiByteToWideChar(
-		CP_UTF8, 0, 
-		reinterpret_cast<char const*>(input.data()), static_cast<int>(input.size()), 
+		CP_UTF8, 0,
+		reinterpret_cast<char const*>(input.data()), static_cast<int>(input.size()),
 		0, 0
 	), '\0');
 
 	MultiByteToWideChar(
-		CP_UTF8, 0, 
-		reinterpret_cast<char const*>(input.data()), static_cast<int>(input.size()), 
+		CP_UTF8, 0,
+		reinterpret_cast<char const*>(input.data()), static_cast<int>(input.size()),
 		result.data(), static_cast<int>(result.size())
 	);
 
@@ -96,8 +97,8 @@ auto utf8_to_wide(std::u8string_view const input) -> std::wstring {
 
 auto utf8_to_wide(std::u8string_view const input, std::span<wchar_t> output) {
 	auto const length = MultiByteToWideChar(
-		CP_UTF8, 0, 
-		reinterpret_cast<char const*>(input.data()), static_cast<int>(input.size()), 
+		CP_UTF8, 0,
+		reinterpret_cast<char const*>(input.data()), static_cast<int>(input.size()),
 		output.data(), static_cast<int>(output.size())
 	);
 
@@ -108,14 +109,14 @@ auto utf8_to_wide(std::u8string_view const input, std::span<wchar_t> output) {
 
 auto wide_to_utf8(std::wstring_view const input) -> std::u8string {
 	auto result = std::u8string(WideCharToMultiByte(
-		CP_UTF8, 0, 
-		input.data(), static_cast<int>(input.size()), 
+		CP_UTF8, 0,
+		input.data(), static_cast<int>(input.size()),
 		0, 0, nullptr, nullptr
 	), '\0');
 
 	WideCharToMultiByte(
-		CP_UTF8, 0, 
-		input.data(), static_cast<int>(input.size()), 
+		CP_UTF8, 0,
+		input.data(), static_cast<int>(input.size()),
 		reinterpret_cast<char*>(result.data()), static_cast<int>(result.size()),
 		nullptr, nullptr
 	);
@@ -125,8 +126,8 @@ auto wide_to_utf8(std::wstring_view const input) -> std::u8string {
 
 auto wide_to_utf8(std::wstring_view const input, std::span<char8_t> output) {
 	auto const length = WideCharToMultiByte(
-		CP_UTF8, 0, 
-		input.data(), static_cast<int>(input.size()), 
+		CP_UTF8, 0,
+		input.data(), static_cast<int>(input.size()),
 		reinterpret_cast<char*>(output.data()), static_cast<int>(output.size()),
 		nullptr, nullptr
 	);
@@ -139,9 +140,9 @@ auto wide_to_utf8(std::wstring_view const input, std::span<char8_t> output) {
 //---------------------------------------------------------
 
 auto throw_error(
-	std::string reason, 
+	std::string reason,
 	int const error_code = static_cast<int>(GetLastError())
-) -> void 
+) -> void
 {
 	reason += " with code ";
 	reason += std::to_string(error_code);
@@ -156,13 +157,17 @@ auto throw_error(
 namespace unix {
 
 auto throw_error(
-	std::string reason, 
+	std::string reason,
 	int const error_code = errno
-) -> void 
+) -> void
 {
 	reason += " with code ";
 	reason += std::to_string(error_code);
 	throw std::system_error{error_code, std::generic_category(), reason};
+}
+
+auto print_openssl_errors() -> void {
+	ERR_print_errors_fp(stdout);
 }
 
 } // namespace unix
@@ -171,7 +176,7 @@ auto throw_error(
 
 } // namespace utils
 
-#ifdef _WIN32 
+#ifdef _WIN32
 
 class WinSockLifetime {
 public:
@@ -226,10 +231,10 @@ public:
 	auto operator=(SocketHandle const&) -> SocketHandle& = delete;
 
 	SocketHandle(SocketHandle&& handle) :
-		m_handle{handle.m_handle} 
+		m_handle{handle.m_handle}
 	{
 		handle.m_handle = INVALID_SOCKET;
-	} 
+	}
 	auto operator=(SocketHandle&& handle) -> SocketHandle& {
 		m_handle = handle.m_handle;
 		handle.m_handle = INVALID_SOCKET;
@@ -240,10 +245,10 @@ public:
 class Socket::Implementation {
 private:
 	WinSockLifetime m_api_lifetime;
-	
+
 	SocketHandle m_handle;
 
-	static auto get_address_info(std::u8string_view const server, utils::Port const port) 
+	static auto get_address_info(std::u8string_view const server, utils::Port const port)
 	{
 		auto const wide_server_name = utils::win::utf8_to_wide(server);
 		auto const wide_port_string = std::to_wstring(port);
@@ -255,8 +260,8 @@ private:
 		auto address_info = static_cast<addrinfoW*>(nullptr);
 
 		while (auto const result = GetAddrInfoW(
-			wide_server_name.data(), 
-			wide_port_string.data(), 
+			wide_server_name.data(),
+			wide_port_string.data(),
 			&hints, &address_info
 		)) {
 			if (result == EAI_AGAIN) {
@@ -275,7 +280,7 @@ private:
 
 	static auto create_handle(std::u8string_view const server, utils::Port const port) -> SocketHandle {
 		auto const address_info = get_address_info(server, port);
-		
+
 		auto const handle_error = [](auto error_message) {
 			if (auto const error_code = WSAGetLastError(); error_code != WSAEINPROGRESS) {
 				utils::win::throw_error(error_message, error_code);
@@ -285,7 +290,7 @@ private:
 		};
 
 		auto socket_handle = SocketHandle{};
-		while ((socket_handle = socket(address_info->ai_family, address_info->ai_socktype, address_info->ai_protocol)).get() == INVALID_SOCKET) 
+		while ((socket_handle = socket(address_info->ai_family, address_info->ai_socktype, address_info->ai_protocol)).get() == INVALID_SOCKET)
 		{
 			handle_error("Failed to create socket");
 		}
@@ -300,17 +305,17 @@ private:
 
 	auto receive_response() const -> SocketResponse {
 		constexpr auto packet_size = 512;
-		
+
 		auto buffer = std::vector<std::byte>(packet_size);
 		auto buffer_offset = 0ull;
-		
+
 		while (true) {
-			if (auto const result = recv(m_handle.get(), reinterpret_cast<char*>(buffer.data() + buffer_offset), static_cast<int>(packet_size), 0); 
-				result > 0) 
+			if (auto const result = recv(m_handle.get(), reinterpret_cast<char*>(buffer.data() + buffer_offset), static_cast<int>(packet_size), 0);
+				result > 0)
 			{
 				buffer_offset += result;
 				buffer.resize(buffer_offset + packet_size);
-			} 
+			}
 			else if (result < 0) {
 				utils::win::throw_error("Failed to receive data through socket");
 			}
@@ -323,9 +328,9 @@ private:
 public:
 	auto send(std::span<std::byte const> const data) const -> SocketResponse {
 		if (::send(
-			m_handle.get(), 
-			reinterpret_cast<char const*>(data.data()), 
-			static_cast<int>(data.size()), 
+			m_handle.get(),
+			reinterpret_cast<char const*>(data.data()),
+			static_cast<int>(data.size()),
 			0
 		) == SOCKET_ERROR) {
 			utils::win::throw_error("Failed to send data through socket", WSAGetLastError());
@@ -335,9 +340,9 @@ public:
 		}
 		return receive_response();
 	}
-	
+
 	Implementation(std::u8string_view const server, utils::Port const port) :
-		m_handle{create_handle(server, port)} 
+		m_handle{create_handle(server, port)}
 	{}
 };
 
@@ -391,10 +396,10 @@ public:
 	auto operator=(SocketHandle const&) -> SocketHandle& = delete;
 
 	SocketHandle(SocketHandle&& handle) :
-		m_handle{handle.m_handle} 
+		m_handle{handle.m_handle}
 	{
 		handle.m_handle = invalid_handle;
-	} 
+	}
 	auto operator=(SocketHandle&& handle) -> SocketHandle& {
 		m_handle = handle.m_handle;
 		handle.m_handle = invalid_handle;
@@ -406,7 +411,7 @@ class RawSocket {
 private:
 	SocketHandle m_handle;
 
-	static auto get_address_info(std::u8string const server, utils::Port const port) 
+	static auto get_address_info(std::u8string const server, utils::Port const port)
 	{
 		auto const port_string = std::to_string(port);
 		auto const hints = addrinfo{
@@ -437,12 +442,12 @@ private:
 
 	static auto create_handle(std::u8string_view const server, utils::Port const port) -> SocketHandle {
 		auto const address_info = get_address_info(std::u8string{server}, port);
-		
+
 		auto socket_handle = SocketHandle{::socket(address_info->ai_family, address_info->ai_socktype, address_info->ai_protocol)};
 		if (!socket_handle) {
 			utils::unix::throw_error("Failed to create socket");
 		}
-		
+
 		while (::connect(socket_handle.get(), address_info->ai_addr, static_cast<int>(address_info->ai_addrlen)) == -1)
 		{
 			if (auto const error_code = errno; error_code != EINPROGRESS) {
@@ -457,17 +462,17 @@ private:
 
 	auto receive_response() const -> SocketResponse {
 		constexpr auto packet_size = 512;
-		
+
 		auto buffer = std::vector<std::byte>(packet_size);
 		auto buffer_offset = 0ull;
-		
+
 		while (true) {
-			if (auto const result = recv(m_handle.get(), reinterpret_cast<char*>(buffer.data() + buffer_offset), static_cast<int>(packet_size), 0); 
-				result > 0) 
+			if (auto const result = recv(m_handle.get(), reinterpret_cast<char*>(buffer.data() + buffer_offset), static_cast<int>(packet_size), 0);
+				result > 0)
 			{
 				buffer_offset += result;
 				buffer.resize(buffer_offset + packet_size);
-			} 
+			}
 			else if (result < 0) {
 				utils::unix::throw_error("Failed to receive data through socket");
 			}
@@ -484,9 +489,9 @@ public:
 
 	auto send(std::span<std::byte const> const data) const -> SocketResponse {
 		if (::send(
-			m_handle.get(), 
-			reinterpret_cast<char const*>(data.data()), 
-			static_cast<int>(data.size()), 
+			m_handle.get(),
+			reinterpret_cast<char const*>(data.data()),
+			static_cast<int>(data.size()),
 			0
 		) == -1) {
 			utils::unix::throw_error("Failed to send data through socket");
@@ -504,12 +509,13 @@ public:
 
 class TlsSocket {
 	static auto throw_tls_error() -> void {
+		utils::unix::print_openssl_errors();
 		throw errors::ConnectionFailed{.was_tls_failure = true};
 	}
-	
+
 	using TlsContext = std::unique_ptr<SSL_CTX, decltype([](auto x){SSL_CTX_free(x);})>;
 	TlsContext m_tls_context = []{
-		if (auto const method = TLS_method()) {
+		if (auto const method = TLS_client_method()) {
 			if (auto const tls = SSL_CTX_new(method)) {
 				return TlsContext{tls};
 			}
@@ -533,11 +539,12 @@ class TlsSocket {
 		if (m_raw_socket) {
 			return;
 		}
-		
-		// The server certificate will be verified.
-		SSL_CTX_set_verify(m_tls_context.get(), SSL_VERIFY_PEER, nullptr);
-		// Include all workarounds for bugs in server implementations.
+
 		SSL_CTX_set_options(m_tls_context.get(), SSL_OP_ALL);
+
+		if (1 != SSL_CTX_set_default_verify_paths(m_tls_context.get())) {
+			throw_tls_error();
+		}
 
 		// Set the socket to be used by the tls connection
 		m_raw_socket = std::make_unique<RawSocket>(server, port);
@@ -550,9 +557,7 @@ class TlsSocket {
 			throw_tls_error();
 		}
 
-		if (1 != SSL_do_handshake(m_tls_connection.get())) {
-			throw_tls_error();
-		}
+		SSL_connect(m_tls_connection.get());
 
 		// Just to check that a certificate was presented by the server
 		if (auto const certificate = SSL_get_peer_certificate(m_tls_connection.get())) {
@@ -563,27 +568,29 @@ class TlsSocket {
 		}
 
 		// Verify the result of the chain verification
-		if (X509_V_OK != SSL_get_verify_result(m_tls_connection.get())) {
+		auto const verify_result = SSL_get_verify_result(m_tls_connection.get());
+		if (X509_V_OK != verify_result) {
 			throw_tls_error();
 		}
+
 	}
 
 	auto receive_response() const -> SocketResponse {
 		constexpr auto packet_size = 512;
-		
+
 		auto buffer = std::vector<std::byte>(packet_size);
 		auto buffer_offset = 0ull;
-		
+
 		while (true) {
 			if (auto const result = SSL_read(
-					m_tls_connection.get(), 
-					buffer.data() + buffer_offset, 
+					m_tls_connection.get(),
+					buffer.data() + buffer_offset,
 					static_cast<int>(packet_size)
-				); result > 0) 
+				); result > 0)
 			{
 				buffer_offset += result;
 				buffer.resize(buffer_offset + packet_size);
-			} 
+			}
 			else if (result < 0) {
 				utils::unix::throw_error("Failed to receive data through socket");
 			}
@@ -595,10 +602,9 @@ class TlsSocket {
 
 public:
 	auto send(std::span<std::byte const> const data) const -> SocketResponse {
-		
 		if (SSL_write(
-			m_tls_connection.get(), 
-			data.data(), 
+			m_tls_connection.get(),
+			data.data(),
 			static_cast<int>(data.size())
 		) == -1) {
 			utils::unix::throw_error("Failed to send data through socket");
@@ -635,7 +641,7 @@ public:
 		}
 		return std::get<TlsSocket>(m_socket).send(data);
 	}
-	
+
 	Implementation(std::u8string_view const server, utils::Port const port) :
 		m_socket{select_socket(server, port)}
 	{}
