@@ -33,6 +33,7 @@ SOFTWARE.
 #include <concepts>
 #include <memory>
 #include <algorithm>
+#include <thread>
 
 // Debugging
 // #include <iostream>
@@ -68,7 +69,8 @@ concept IsAnyOf = (std::same_as<T, U> || ...);
 	It just forwards the argument to the return value.
 */
 template<typename T>
-[[nodiscard]] constexpr auto select_on_type(T&& item) noexcept -> T&& {
+[[nodiscard]] 
+constexpr auto select_on_type(T&& item) noexcept -> T&& {
 	return std::forward<T>(item);
 }
 /*
@@ -76,7 +78,8 @@ template<typename T>
 	its type, which is given as a template argument.
 */
 template<typename T, typename U, typename ... V> requires IsAnyOf<T, U, V...>
-[[nodiscard]] constexpr auto select_on_type(U&& first_item, V&& ... items) noexcept -> auto&& {
+[[nodiscard]] 
+constexpr auto select_on_type(U&& first_item, V&& ... items) noexcept -> auto&& {
 	if constexpr (std::is_same_v<T, U>) {
 		return std::forward<U>(first_item);
 	}
@@ -192,9 +195,15 @@ template<
 > 
 [[nodiscard]]
 inline auto range_to_string(_Range const& range) -> _String {
-	auto result = _String();
+	auto result = _String{};
 	std::ranges::copy(range, std::back_inserter(result));
 	return result;
+}
+
+template<IsAnyOf<char8_t, char> _Char, typename _String = std::basic_string_view<_Char>>
+[[nodiscard]] 
+inline auto data_to_string(std::span<std::byte> const data) -> _String {
+	return _String{reinterpret_cast<_Char const*>(data.data()), data.size()};
 }
 
 //---------------------------------------------------------
@@ -342,6 +351,117 @@ constexpr auto get_is_allowed_uri_character(char const character) noexcept -> bo
 		other_characters.find(character) != std::string_view::npos;
 }
 
+//---------------------------------------------------------
+
+template<template<typename U> typename T>
+concept IsVector = std::same_as<std::remove_cv_t<T<U>>, std::vector<U>>;
+
+/*
+	A span that points to a part of a std::vector.
+	Reallocation of the underlying vector does not invalidate the span.
+*/
+template<IsVector _Vector>
+class VectorSpan {
+public:
+	using element_type = _Vector::element_type;
+	using value_type = _Vector::value_type;
+
+	using size_type = _Vector::size_type;
+	using difference_type = _Vector::difference_type;
+	
+	using pointer = _Vector::pointer;
+	using const_pointer = _Vector::const_pointer;
+	
+	using reference = _Vector::reference;
+	using const_reference = _Vector::const_referenct;
+	
+	using iterator = _Vector::iterator;
+	using const_iterator = _Vector::const_iterator;
+	using reverse_iterator = _Vector::reverse_iterator;
+	using const_reverse_iterator = _Vector::const_reverse_iterator;
+
+private:
+	_Vector* m_vector{};
+	size_type m_start{};
+	size_type m_end{};
+
+public:
+	[[nodiscard]]
+	constexpr VectorSpan() = default;
+	[[nodiscard]]
+	constexpr VectorSpan(_Vector& vector) :
+		m_vector{&vector}, m_start{0}, m_end{vector.size()}
+	{}
+	[[nodiscard]]
+	constexpr VectorSpan(_Vector& vector, size_type const start, size_type const size) :
+		m_vector{&vector}, m_start{start}, m_end{start + size}
+	{}
+
+	[[nodiscard]]
+	constexpr auto operator[](size_type const index) -> reference_type {
+		return m_vector[m_start + index];
+	}
+	[[nodiscard]]
+	constexpr auto operator[](size_type const index) const -> const_reference_type {
+		return m_vector[m_start + index];
+	}
+	
+	[[nodiscard]]
+	constexpr auto data() -> pointer {
+		return m_vector.data() + m_start;
+	}
+	[[nodiscard]]
+	constexpr auto data() const -> const_pointer {
+		return m_vector.data() + m_start;
+	}
+	
+	[[nodiscard]]
+	constexpr auto back() -> reference {
+		return m_vector[m_end - 1];
+	}
+	[[nodiscard]]
+	constexpr auto back() const -> const_reference {
+		return m_vector[m_end - 1];
+	}
+	
+	[[nodiscard]]
+	constexpr auto size() const -> size_type {
+		return m_end - m_start;
+	}
+	/*
+		Returns whether the span is empty.
+	*/
+	[[nodiscard]]
+	auto empty() const -> bool {
+		return m_start == m_end;
+	}
+
+	[[nodiscard]]
+	auto begin() -> iterator {
+		return m_vector->begin() + m_start;
+	}
+	[[nodiscard]]
+	auto begin() const -> const_iterator {
+		return m_vector->begin() + m_start;
+	}
+	[[nodiscard]]
+	auto rbegin() const -> const_reverse_iterator {
+		return m_vector->rbegin() + m_end;
+	}
+	[[nodiscard]]
+	auto end() -> iterator {
+		return m_vector->begin() + m_end;
+	}
+	[[nodiscard]]
+	auto end() const -> const_iterator {
+		return m_vector->begin() + m_end;
+	}
+	[[nodiscard]]
+	auto rend() const -> const_reverse_iterator {
+		return m_vector->rbegin() + m_start;
+	}
+};
+
 } // namespace utils
 
 //---------------------------------------------------------
@@ -370,35 +490,51 @@ struct ConnectionFailed {
 
 //---------------------------------------------------------
 
-struct SocketResponse {
-	std::vector<std::byte> data;
-
-	template<utils::IsAnyOf<char, char8_t> T = char8_t>
-	auto as_string() const -> std::basic_string_view<T> {
-		return {reinterpret_cast<T const*>(data.data()), data.size()};
-	}
-};
-
 class Socket {
 public:
 	[[nodiscard]]
-	auto send(std::span<std::byte const> data) const -> SocketResponse;
+	auto get_is_ready() -> bool;
+
 	[[nodiscard]]
-	auto send(std::u8string_view string) const -> SocketResponse {
+	auto send(std::span<std::byte const> data) const -> std::vector<std::byte const>;
+	[[nodiscard]]
+	auto send(std::u8string_view string) const -> std::vector<std::byte const> {
 		return send(std::span{reinterpret_cast<std::byte const*>(string.data()), string.length()});
 	}
 	[[nodiscard]]
-	auto send(std::string_view string) const -> SocketResponse {
+	auto send(std::string_view string) const -> std::vector<std::byte const> {
 		return send(std::span{reinterpret_cast<std::byte const*>(string.data()), string.length()});
 	}
 
-	Socket(); // = default in .cpp
+	/*
+		Sends data through the sockets and immediately returns.
+		Use functions like get_new_data 
+	*/
+	auto send_async(std::span<std::byte const> data) const -> void;
+	auto send_async(std::u8string_view string) const -> void {
+		return send_async(std::span{reinterpret_cast<std::byte const*>(string.data()), string.length()});
+	}
+	auto send_async(std::string_view string) const -> void {
+		return send_async(std::span{reinterpret_cast<std::byte const*>(string.data()), string.length()});
+	}
+	/*
+		Returns a span to the data that was received through the socket since the last call to 
+		get_new_data or copy_new_data.
+		It only makes sense to use this function after calling send_async, since send() 
+		blocks until all data has been received.
+		The returned span is invalid after the next call to this function.
+	*/
+	[[nodiscard]]
+	auto get_new_data() const -> VectorSpan<std::vector<std::byte const> const>;
+
+	Socket() = delete;
+	~Socket(); // = default in .cpp
+
 	Socket(Socket&&); // = default in .cpp
 	auto operator=(Socket&&) -> Socket&; // = default in .cpp
+
 	Socket(Socket const&) = delete;
 	auto operator=(Socket const&) -> Socket& = delete;
-
-	~Socket(); // = default in .cpp
 
 private:
 	class Implementation;
@@ -408,6 +544,7 @@ private:
 	friend auto open_socket(std::u8string_view server, utils::Port port) -> Socket;
 };
 
+[[nodiscard]]
 inline auto open_socket(std::u8string_view const server, utils::Port const port) -> Socket {
 	return Socket{server, port};
 }
@@ -434,6 +571,7 @@ struct HeaderCopy {
 struct Header {
 	std::string_view name, value;
 
+	[[nodiscard]]
 	explicit operator HeaderCopy()
 	{
 		return HeaderCopy{
@@ -456,6 +594,7 @@ concept IsHeader = utils::IsAnyOf<T, HeaderCopy, Header>;
 /*
 	Compares two headers, taking into account case insensitivity.
 */
+[[nodiscard]]
 auto operator==(IsHeader auto const& lhs, IsHeader auto const& rhs) -> bool {
 	return std::ranges::equal(
 		lhs.name | utils::ascii_lowercase_transform, 
@@ -662,7 +801,7 @@ private:
 */
 class GetRequest {
 private:
-	std::string m_user_agent = std::string{GetRequest::default_user_agent};
+	std::string m_user_agent = std::string{default_user_agent};
 
 public:
 	static constexpr auto default_user_agent = std::string_view{"Cpp20InternetClient"};
@@ -677,7 +816,7 @@ public:
 	}
 
 private:
-	std::string m_headers;
+	std::string m_headers{"\r\n"};
 public:
 	/*
 		Adds headers to the GET request as a string.
@@ -690,10 +829,12 @@ public:
 		if (headers_string.empty()) {
 			return std::move(*this);
 		}
+		
 		m_headers += headers_string;
 		if (headers_string.back() != '\n') {
 			m_headers += "\r\n"; // CRLF is the correct line ending for the HTTP protocol
 		}
+		
 		return std::move(*this);
 	}
 	/*
@@ -702,10 +843,12 @@ public:
 	auto add_headers(std::span<Header const> const headers) && -> GetRequest&& {
 		auto headers_string = std::string{};
 		headers_string.reserve(headers.size()*128);
-		for (auto const header : headers) {
+		
+		for (auto const& header : headers) {
 			// TODO: Use std::format when it has been implemented by compilers.
 			(((headers_string += header.name) += ": ") += header.value) += "\r\n";
 		}
+		
 		return std::move(*this).add_headers(headers_string);
 	}
 	/*
@@ -741,21 +884,22 @@ public:
 	*/
 	[[nodiscard]] 
 	auto send() && -> GetResponse {
+		m_socket.send(std::string{"GET "} + m_split_url.path + "HTTP/1.1\r\nHost: " + m_split_url.domain_name + "\r\n" + m_headers + "\r\n");
 		return GetResponse{std::move(m_socket)};
 	}
 
 	GetRequest() = delete;
+	~GetRequest() = default;
 
 	GetRequest(GetRequest&&) = default;
 	auto operator=(GetRequest&&) -> GetRequest& = default;
+
 	GetRequest(GetRequest const&) = delete;
 	auto operator=(GetRequest const&) -> GetRequest& = delete;
 
-	~GetRequest() = default;
-
 private:
 	friend auto get(std::u8string_view url) -> GetRequest;
-	GetRequest(std::u8string_view url) :
+	GetRequest(std::u8string_view const url) :
 		m_split_url{utils::split_url(url)},
 		m_socket{open_socket(m_split_url.domain_name, utils::get_port(m_split_url.protocol))}
 	{}

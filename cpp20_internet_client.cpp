@@ -467,8 +467,12 @@ private:
 		auto buffer_offset = 0ull;
 
 		while (true) {
-			if (auto const result = recv(m_handle.get(), reinterpret_cast<char*>(buffer.data() + buffer_offset), static_cast<int>(packet_size), 0);
-				result > 0)
+			if (auto const result = recv(
+					m_handle.get(), 
+					reinterpret_cast<char*>(buffer.data() + buffer_offset), 
+					static_cast<int>(packet_size), 
+					0
+				); result > 0)
 			{
 				buffer_offset += result;
 				buffer.resize(buffer_offset + packet_size);
@@ -540,7 +544,7 @@ class TlsSocket {
 			return;
 		}
 
-		SSL_CTX_set_options(m_tls_context.get(), SSL_OP_ALL);
+		// SSL_CTX_set_options(m_tls_context.get(), SSL_OP_ALL);S
 
 		if (1 != SSL_CTX_set_default_verify_paths(m_tls_context.get())) {
 			throw_tls_error();
@@ -552,8 +556,14 @@ class TlsSocket {
 			throw_tls_error();
 		}
 
+		auto const host_name_c_string = utils::u8string_to_utf8_string(server).data();
+
 		// For SNI (Server Name Identification)
-		if (1 != SSL_set_tlsext_host_name(m_tls_connection.get(), utils::u8string_to_utf8_string(server).data())) {
+		if (1 != SSL_set_tlsext_host_name(m_tls_connection.get(), host_name_c_string)) {
+			throw_tls_error();
+		}
+		// Configure automatic hostname check
+		if (1 != SSL_set1_host(m_tls_connection.get(), host_name_c_string)) {
 			throw_tls_error();
 		}
 
@@ -567,12 +577,11 @@ class TlsSocket {
 			throw_tls_error();
 		}
 
-		// Verify the result of the chain verification
+		// Get result of the certificate verification
 		auto const verify_result = SSL_get_verify_result(m_tls_connection.get());
 		if (X509_V_OK != verify_result) {
 			throw_tls_error();
 		}
-
 	}
 
 	auto receive_response() const -> SocketResponse {
@@ -597,7 +606,7 @@ class TlsSocket {
 			else break;
 		}
 
-		return SocketResponse{.data=std::move(buffer)};
+		return SocketResponse{.data = std::move(buffer)};
 	}
 
 public:
@@ -657,7 +666,6 @@ Socket::Socket(std::u8string_view const server, utils::Port const port) :
 	m_implementation{std::make_unique<Implementation>(server, port)}
 {}
 
-Socket::Socket() = default;
 Socket::~Socket() = default;
 
 Socket::Socket(Socket&&) = default;

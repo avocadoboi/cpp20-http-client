@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.0.0)
 project(cpp20_internet_client VERSION 0.1.0)
 
 set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED true)
 
 #-----------------------------
 
@@ -9,6 +10,7 @@ if (WIN32)
 	# Windows sockets 2
 	link_libraries(Ws2_32)
 else()
+	# OpenSSL
 	link_libraries(ssl crypto)
 endif()
 
