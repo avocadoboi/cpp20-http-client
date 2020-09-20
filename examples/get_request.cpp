@@ -20,7 +20,6 @@ auto read_url() -> std::string {
 
 auto send_request(std::string_view const url) -> http::GetResponse {
 	return http::get(url)
-		.set_user_agent("GetRequestTest")
 		.add_header({.name="One", .value="aaa"}) // http::Header struct.
 		.add_headers("Two: bbb") // Can be multiple lines for more than one header.
 		.add_headers( // Variadic template
@@ -56,8 +55,8 @@ auto do_request() -> void {
 	}
 
 	auto const filename = [&]{
-		if (auto const filename = utils::extract_filename<char>(url); filename.empty()) {
-			return utils::split_url<char>(url).domain_name;
+		if (auto const filename = utils::extract_filename(std::string_view{url}); filename.empty()) {
+			return utils::split_url(std::string_view{url}).domain_name;
 		}
 		else {
 			return filename;

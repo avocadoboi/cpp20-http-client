@@ -21,21 +21,6 @@ TEST_CASE("Trying split_url for http://bjornsundin.com/projects/index.html") {
 	CHECK(path == u8"/projects/index.html");
 }
 
-TEST_CASE("Trying split_url for ftp://aaaaa.se/bbbbbb") {
-	auto const [protocol, host_name, path] = utils::split_url(u8"ftp://aaaaa.se/bbbbbb"sv);
-	
-	CHECK(protocol == utils::Protocol::Ftp);
-	CHECK(host_name == u8"aaaaa.se");
-	CHECK(path == u8"/bbbbbb");
-}
-TEST_CASE("Trying split_url for sftp://aaaaa.se/bbbbbb") {
-	auto const [protocol, host_name, path] = utils::split_url(u8"sftp://aaaaa.se/bbbbbb"sv);
-	
-	CHECK(protocol == utils::Protocol::Sftp);
-	CHECK(host_name == u8"aaaaa.se");
-	CHECK(path == u8"/bbbbbb");
-}
-
 TEST_CASE("Trying split_url for github.com/avocadoboi") {
 	auto const [protocol, host_name, path] = utils::split_url(u8"github.com/avocadoboi"sv);
 	
