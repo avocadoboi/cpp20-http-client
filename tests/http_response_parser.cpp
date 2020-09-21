@@ -5,14 +5,14 @@
 using namespace internet_client;
 using namespace std::string_view_literals;
 
-auto test_response_parser(std::string_view const input, http::ParsedHttpResponse const& expected_result) 
+auto test_response_parser(std::string_view const input, http::ParsedResponse const& expected_result) 
     -> void 
 {
     for (size_t const packet_size : {8, 32, 128, 512, 2048})
     {
         auto const response_data = utils::string_to_data<std::byte>(input);
 
-        auto parser = http::HttpResponseParser{};
+        auto parser = http::ResponseParser{};
 
         for (auto pos = size_t{};; pos += packet_size) 
         {
@@ -49,7 +49,7 @@ TEST_CASE("Http response parser, conforming line endings") {
     auto const input = 
         expected_headers_string + "\r\n\r\n" + expected_body_string;
 
-    auto const expected_result = http::ParsedHttpResponse{
+    auto const expected_result = http::ParsedResponse{
         .headers_string = expected_headers_string,
         .headers = {
             http::Header{.name="content-length", .value="40"},
@@ -78,7 +78,7 @@ TEST_CASE("Http response parser, nonconforming line endings") {
     auto const input = 
         expected_headers_string + "\n\n" + expected_body_string;
 
-    auto const expected_result = http::ParsedHttpResponse{
+    auto const expected_result = http::ParsedResponse{
         .headers_string = expected_headers_string,
         .headers = {
             http::Header{.name="content-length", .value="40"},
@@ -94,6 +94,6 @@ TEST_CASE("Http response parser, nonconforming line endings") {
 TEST_CASE("Http response parser, no body") {
     constexpr auto input = "HTTP/1.1 404 Not Found\r\n\r\n";
 
-    auto const expected_result = http::ParsedHttpResponse{.headers_string = "HTTP/1.1 404 Not Found"};
+    auto const expected_result = http::ParsedResponse{.headers_string = "HTTP/1.1 404 Not Found"};
     test_response_parser(input, expected_result);
 }

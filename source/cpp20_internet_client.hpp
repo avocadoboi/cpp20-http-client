@@ -248,10 +248,10 @@ auto string_to_data(IsByteStringView auto string) -> std::span<_Byte const> {
 
 
 template<std::integral T>
-auto string_to_integral(IsByteStringView auto const p_string) -> std::optional<T> {
+auto string_to_integral(IsByteStringView auto const string, int base = 10) -> std::optional<T> {
 	auto number_result = T{};
-	auto const char_pointer = reinterpret_cast<char const*>(p_string.data());
-	if (std::from_chars(char_pointer, char_pointer + p_string.size(), number_result).ec == std::errc{}) {
+	auto const char_pointer = reinterpret_cast<char const*>(string.data());
+	if (std::from_chars(char_pointer, char_pointer + string.size(), number_result, base).ec == std::errc{}) {
 		return number_result;
 	}
 	return {};
@@ -371,10 +371,10 @@ inline auto split_url(_StringView const url) noexcept
 		position != _StringView::npos) 
 	{
 		result.protocol = get_protocol_from_string(url.substr(start_position, position - start_position));
-		if (result.protocol == Protocol::Unknown) {
-			result.protocol = default_protocol;
-		}
 		start_position = position + protocol_suffix.length();
+	}
+	if (result.protocol == Protocol::Unknown) {
+		result.protocol = default_protocol;
 	}
 
 	if (auto const position = url.find(select_on_type<_Char>(u8'/', '/'), start_position);
@@ -385,6 +385,7 @@ inline auto split_url(_StringView const url) noexcept
 	}
 	else {
 		result.domain_name = url.substr(start_position);
+		result.path = select_on_type<_StringView>(u8"/"sv, "/"sv);
 		return result;
 	}
 
@@ -424,129 +425,6 @@ constexpr auto get_is_allowed_uri_character(char const character) noexcept
 		character >= 'A' && character <= 'Z' ||
 		other_characters.find(character) != std::string_view::npos;
 }
-
-//---------------------------------------------------------
-
-template<typename T>
-concept IsVector = requires(T x) { std::vector(x); };
-
-/*
-	A span that points to a part of a std::vector.
-	Reallocation of the underlying vector does not invalidate the span.
-*/
-template<IsVector _Vector>
-class VectorSpan {
-public:
-	using element_type = _Vector::element_type;
-	using value_type = _Vector::value_type;
-
-	using size_type = _Vector::size_type;
-	using difference_type = _Vector::difference_type;
-	
-	using pointer = _Vector::pointer;
-	using const_pointer = _Vector::const_pointer;
-	
-	using reference = _Vector::reference;
-	using const_reference = _Vector::const_reference;
-	
-	using iterator = _Vector::iterator;
-	using const_iterator = _Vector::const_iterator;
-	using reverse_iterator = _Vector::reverse_iterator;
-	using const_reverse_iterator = _Vector::const_reverse_iterator;
-
-private:
-	_Vector* m_vector{};
-	size_type m_start{};
-	size_type m_end{};
-
-public:
-	[[nodiscard]]
-	constexpr VectorSpan() = default;
-	[[nodiscard]]
-	constexpr VectorSpan(_Vector& vector) :
-		m_vector{&vector}, m_start{0}, m_end{vector.size()}
-	{}
-	[[nodiscard]]
-	constexpr VectorSpan(_Vector& vector, size_type const start, size_type const size) :
-		m_vector{&vector}, m_start{start}, m_end{start + size}
-	{}
-	[[nodiscard]]
-	constexpr VectorSpan(_Vector& vector, const_iterator const start, const_iterator const end) :
-		m_vector{&vector}, m_start{start - vector.begin()}, m_end{end - vector.begin()}
-	{}
-
-	[[nodiscard]]
-	constexpr auto operator[](size_type const index) -> reference {
-		return m_vector[m_start + index];
-	}
-	[[nodiscard]]
-	constexpr auto operator[](size_type const index) const -> const_reference {
-		return m_vector[m_start + index];
-	}
-	
-	[[nodiscard]]
-	constexpr auto data() -> pointer {
-		return m_vector.data() + m_start;
-	}
-	[[nodiscard]]
-	constexpr auto data() const -> const_pointer {
-		return m_vector.data() + m_start;
-	}
-	
-	[[nodiscard]]
-	constexpr auto back() -> reference {
-		return m_vector[m_end - 1];
-	}
-	[[nodiscard]]
-	constexpr auto back() const -> const_reference {
-		return m_vector[m_end - 1];
-	}
-	
-	[[nodiscard]]
-	constexpr auto size() const -> size_type {
-		return m_end - m_start;
-	}
-	/*
-		Returns whether the span is empty.
-	*/
-	[[nodiscard]]
-	auto empty() const -> bool {
-		return m_start == m_end;
-	}
-
-	[[nodiscard]]
-	auto begin() -> iterator {
-		return m_vector->begin() + m_start;
-	}
-	[[nodiscard]]
-	auto begin() const -> const_iterator {
-		return m_vector->begin() + m_start;
-	}
-	[[nodiscard]]
-	auto rbegin() -> reverse_iterator {
-		return m_vector->rbegin() + m_end;
-	}
-	[[nodiscard]]
-	auto rbegin() const -> const_reverse_iterator {
-		return m_vector->rbegin() + m_end;
-	}
-	[[nodiscard]]
-	auto end() -> iterator {
-		return m_vector->begin() + m_end;
-	}
-	[[nodiscard]]
-	auto end() const -> const_iterator {
-		return m_vector->begin() + m_end;
-	}
-	[[nodiscard]]
-	auto rend() -> reverse_iterator {
-		return m_vector->rbegin() + m_start;
-	}
-	[[nodiscard]]
-	auto rend() const -> const_reverse_iterator {
-		return m_vector->rbegin() + m_start;
-	}
-};
 
 } // namespace utils
 
@@ -800,17 +678,36 @@ inline auto find_header_by_name(std::span<Header> const headers, std::string_vie
 
 //---------------------------------------------------------
 
-struct ParsedHttpResponse {
+struct ParsedResponse {
 	std::string headers_string;
 	std::vector<Header> headers;
 	DataVector body_data;
 };
 
-class HttpResponseParser {
+class ChunkyBodyParser {
+private:
+	DataVector m_result;
+
+	std::optional<std::size_t> m_chunk_size_left;
+	
+public:
+	auto parse_new_data(std::span<std::byte const> const new_data) -> std::optional<DataVector> {
+		auto const data_string = utils::data_to_string<char>(new_data);
+		
+		if (m_chunk_size_left) {
+			
+		}
+		else {
+			m_chunk_size_left = utils::string_to_integral<std::size_t>(data_string, 16); // hexadecimal
+		}
+	}
+};
+
+class ResponseParser {
 private:
 	DataVector m_buffer;
 
-	ParsedHttpResponse m_result;
+	ParsedResponse m_result;
 
 	std::size_t m_body_start{};
 	std::size_t m_body_size{};
@@ -829,6 +726,7 @@ private:
 		return {};
 	}
 	
+	[[nodiscard]]
 	auto try_extract_headers_string(std::size_t new_data_start) -> std::optional<std::string_view> {
 		for (std::string_view const empty_line : {"\r\n\r\n", "\n\n"})
 		{
@@ -857,11 +755,21 @@ private:
 			if (auto const body_size_try = get_body_size()) {
 				m_body_size = *body_size_try;
 			}
+			else if (auto const transfer_encoding = 
+					algorithms::find_header_by_name(m_result.headers, "transfer-encoding");
+				transfer_encoding && *transfer_encoding == "chunked")
+			{
+				m_chunky_body_parser = ChunkyBodyParser{};
+				m_chunky_body_parser.parse_new_data({m_buffer.begin() + m_body_start, m_buffer.end()});
+			}
 		}
 	}
 
+	std::optional<ChunkyBodyParser> m_chunky_body_parser;
+
 public:
-	auto parse_new_data(std::span<std::byte const> const data) -> std::optional<ParsedHttpResponse> {
+	[[nodiscard]]
+	auto parse_new_data(std::span<std::byte const> const data) -> std::optional<ParsedResponse> {
 		auto const new_data_start = m_buffer.size();
 		
 		m_buffer.insert(m_buffer.end(), data.begin(), data.end());
@@ -869,10 +777,18 @@ public:
 		if (m_result.headers_string.empty()) {
 			try_parse_headers(new_data_start);
 		}
-		if (!m_result.headers_string.empty() && m_buffer.size() >= m_body_start + m_body_size) {
-			auto const body_begin = m_buffer.begin() + m_body_start;
-			m_result.body_data = DataVector(body_begin, body_begin + m_body_size);
-			return m_result;
+		if (!m_result.headers_string.empty()) {
+			if (m_chunky_body_parser) {
+				if (auto const body = m_chunky_body_parser.parse_new_data(data)) {
+					m_result.body_data = std::move(*body);
+					return m_result;
+				}
+			}
+			else if (m_buffer.size() >= m_body_start + m_body_size) {
+				auto const body_begin = m_buffer.begin() + m_body_start;
+				m_result.body_data = DataVector(body_begin, body_begin + m_body_size);
+				return m_result;
+			}
 		}
 		return {};
 	}
@@ -887,10 +803,10 @@ class GetResponse {
 private:
 	Socket m_socket;
 
-	std::optional<ParsedHttpResponse> mutable m_parsed_response;
+	std::optional<ParsedResponse> mutable m_parsed_response;
 
 	auto read_response() const -> void {
-		auto response_parser = HttpResponseParser{};
+		auto response_parser = ResponseParser{};
 
 		constexpr auto buffer_size = 512;
 		auto read_buffer = std::array<std::byte, buffer_size>();
@@ -1108,9 +1024,9 @@ public:
 	*/
 	[[nodiscard]] 
 	auto send() && -> GetResponse {
-		auto const request_string = ((((((std::string{"GET "} += utils::u8string_to_utf8_string(m_split_url.path)) += 
-			" HTTP/1.1\r\nHost: ") += utils::u8string_to_utf8_string(m_split_url.domain_name)) += 
-			"\r\n") += m_headers) += "\r\n");
+		// TODO: Use std::format when it has been implemented by compilers.
+		auto const request_string = (((((std::string{"GET "} += utils::u8string_to_utf8_string(m_split_url.path)) += 
+			" HTTP/1.1\r\nHost: ") += utils::u8string_to_utf8_string(m_split_url.domain_name)) += m_headers) += "\r\n");
 		m_socket.write(std::string_view{request_string});
 		return GetResponse{std::move(m_socket)};
 	}

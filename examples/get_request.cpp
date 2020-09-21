@@ -38,7 +38,7 @@ auto do_request() -> void {
 	auto const response = send_request(url);
 
 	auto const response_headers = response.get_headers_string();
-	std::cout << "Response headers below.\n\n" << response_headers;
+	std::cout << "Response headers below.\n\n" << response_headers << "\n\n";
 
 	if (auto const last_modified = response.get_header_value("last-modified")) { // Case insensitive
 		std::cout << "The resource was last modified " << *last_modified << '\n';
@@ -76,5 +76,4 @@ auto main() -> int {
 	}
 
 	std::cout << "\n\n";
-	std::system("pause");
 }
