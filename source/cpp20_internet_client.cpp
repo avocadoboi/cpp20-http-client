@@ -828,21 +828,6 @@ public:
 		return std::get<TlsSocket>(m_socket).read_available(buffer);
 	}
 
-	// auto get_is_closed() -> bool {
-	// 	if (std::holds_alternative<RawSocket>(m_socket)) {
-	// 		return std::get<RawSocket>(m_socket).get_is_closed();
-	// 	}
-	// 	return std::get<TlsSocket>(m_socket).get_is_closed();
-	// }
-	// auto shut_down() -> void {
-	// 	if (std::holds_alternative<RawSocket>(m_socket)) {
-	// 		std::get<RawSocket>(m_socket).shut_down();
-	// 	}
-	// 	else {
-	// 		std::get<TlsSocket>(m_socket).shut_down();
-	// 	}
-	// }
-
 	Implementation(std::u8string_view const server, utils::Port const port) :
 		m_socket{select_socket(server, port)}
 	{}
@@ -861,14 +846,6 @@ auto Socket::read(std::span<std::byte> buffer) const -> std::variant<ConnectionC
 auto Socket::read_available(std::span<std::byte> buffer) const -> std::variant<ConnectionClosed, std::size_t> {
 	return m_implementation->read_available(buffer);
 }
-
-// auto Socket::get_is_closed() const -> bool {
-// 	return m_implementation->get_is_closed();
-// }
-
-// auto Socket::shut_down() const -> void {
-// 	m_implementation->shut_down();
-// }
 
 Socket::Socket(std::u8string_view const server, utils::Port const port) :
 	m_implementation{std::make_unique<Implementation>(server, port)}

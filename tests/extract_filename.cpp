@@ -1,12 +1,7 @@
-#include <catch2/catch.hpp>
-
-#include <cpp20_internet_client.hpp>
-
-using namespace internet_client;
-using namespace std::string_view_literals;
+#include "testing_header.hpp"
 
 TEST_CASE("Trying extract_filename with empty string") {
-	REQUIRE(utils::extract_filename(u8""sv).empty());
+	CHECK(utils::extract_filename(u8""sv).empty());
 }
 
 TEST_CASE("Trying extract_filename with urls") {

@@ -24,18 +24,19 @@ SOFTWARE.
 
 #pragma once
 
+#include <algorithm>
+#include <charconv>
+#include <concepts>
 #include <fstream>
 #include <functional>
+#include <memory>
+#include <ranges>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <span>
-#include <ranges>
-#include <concepts>
-#include <memory>
-#include <algorithm>
 #include <thread>
 #include <variant>
-#include <charconv>
 
 // Debugging
 // #include <iostream>
@@ -356,8 +357,6 @@ inline auto split_url(_StringView const url) noexcept
 		return {};
 	}
 
-	constexpr auto default_protocol = Protocol::Https;
-	
 	constexpr auto whitespace_characters = select_on_type<_StringView>(u8" \t\r\n"sv, " \t\r\n"sv);
 	auto start_position = url.find_first_not_of(whitespace_characters);
 	if (start_position == _StringView::npos) {
@@ -372,9 +371,6 @@ inline auto split_url(_StringView const url) noexcept
 	{
 		result.protocol = get_protocol_from_string(url.substr(start_position, position - start_position));
 		start_position = position + protocol_suffix.length();
-	}
-	if (result.protocol == Protocol::Unknown) {
-		result.protocol = default_protocol;
 	}
 
 	if (auto const position = url.find(select_on_type<_Char>(u8'/', '/'), start_position);
@@ -468,19 +464,31 @@ struct ConnectionClosed {};
 class Socket {
 public:
 	/*
+		Sends data to the peer through the socket.
 	*/
 	auto write(std::span<std::byte const> data) const -> void;
 	/*
+		Sends a string to the peer through the socket.
 	*/
 	auto write(utils::IsByteStringView auto string) const -> void {
 		write(std::span{reinterpret_cast<std::byte const*>(string.data()), string.length() + 1});
 	}
 
 	/*
+		Receives data from the socket and reads it into a buffer.
+		This function blocks until there is some data available.
+		The data that was read may be smaller than the buffer.
+		The function either returns the number of bytes that were read 
+		or a ConnectionClosed instance if the peer closed the connection. 
 	*/
 	[[nodiscard]]
 	auto read(std::span<std::byte> buffer) const -> std::variant<ConnectionClosed, std::size_t>;
 	/*
+		Receives data from the socket.
+		This function blocks until there is some data available.
+		The function either returns the buffer that was read 
+		or a ConnectionClosed instance if the peer closed the connection. 
+		The returned DataVector may be smaller than what was requested.
 	*/
 	[[nodiscard]]
 	auto read(std::size_t const number_of_bytes = 512) const -> std::variant<ConnectionClosed, DataVector> {
@@ -493,10 +501,20 @@ public:
 	}
 
 	/*
+		Reads any available data from the socket into a buffer.
+		This function is nonblocking, and may return std::size_t{} if 
+		there was no data available. The function either returns the number 
+		of bytes that were read or a ConnectionClosed instance if the peer 
+		closed the connection.
 	*/
 	[[nodiscard]]
 	auto read_available(std::span<std::byte> buffer) const -> std::variant<ConnectionClosed, std::size_t>;
 	/*
+		Reads any available data from the socket into a buffer.
+		This function is nonblocking, and may return an empty vector if 
+		there was no data available. The function either returns a DataVector 
+		of the data that was read or a ConnectionClosed instance if the peer 
+		closed the connection.
 	*/
 	[[nodiscard]]
 	auto read_available() const -> std::variant<ConnectionClosed, DataVector> {
@@ -520,28 +538,6 @@ public:
 		}
 		return {};
 	}
-
-	/*
-		Returns true if the connection is currently closed.
-		The peer may shut down the connection at any time.
-
-		write() reconnects the socket automatically if it closed.
-		read() and read_available() return 0 or empty vectors if the connection is closed.
-	*/
-	// auto get_is_closed() const -> bool;
-	/*
-		Shuts down the connection with the peer.
-		Calling this function sends a message to the peer that indicates
-		that we are done sending data. Other, protocol-defined ways of indicating
-		the end of the sent data should be used instead of calling this member function, since
-		the socket needs to be recreated and reconnected to send more data again.
-		For example, http 1.1 uses an empty line, content-length or the chunked transfer encoding
-		to indicate the end of requests or responses.
-
-		write() reconnects the socket automatically if it closed.
-		read() and read_available() will still read any response data from the peer.
-	*/
-	// auto close() const -> void;
 
 	Socket() = delete;
 	~Socket(); // = default in .cpp
@@ -684,21 +680,110 @@ struct ParsedResponse {
 	DataVector body_data;
 };
 
+/*
+
+xx\r
+\ny...
+y\r
+\nxxx
+\r
+\ny...
+y\r\nxx\r\ny...y\r\n0\r\n\r\n
+
+*/
+
 class ChunkyBodyParser {
 private:
+	static constexpr auto newline = std::string_view{"\r\n"};
+
 	DataVector m_result;
 
-	std::optional<std::size_t> m_chunk_size_left;
-	
-public:
-	auto parse_new_data(std::span<std::byte const> const new_data) -> std::optional<DataVector> {
-		auto const data_string = utils::data_to_string<char>(new_data);
-		
-		if (m_chunk_size_left) {
-			
+	std::size_t m_chunk_size_left;
+
+	auto parse_chunk_size_left(std::string_view const string) -> void {
+		// hexadecimal
+		if (auto const result = utils::string_to_integral<std::size_t>(string, 16)) {
+			m_chunk_size_left = *result;
 		}
 		else {
-			m_chunk_size_left = utils::string_to_integral<std::size_t>(data_string, 16); // hexadecimal
+			throw std::logic_error{"Failed parsing chunk size. This is a bug."};
+		}
+	}
+
+	auto parse_chunk_body_part(std::span<std::byte const> const new_data) -> std::size_t {
+		if (m_chunk_size_left > new_data.size())
+		{
+			m_chunk_size_left -= new_data.size();
+			m_result.insert(m_result.end(), new_data.begin(), new_data.end());
+			return new_data.size();
+		}
+		else {
+			m_result.insert(m_result.end(), new_data.begin(), new_data.begin() + m_chunk_size_left);
+
+			// After each chunk, there is a \r\n and then the size of the next chunk.
+			// We skip the \r\n so the next part starts at the size number.
+			auto const part_end = m_chunk_size_left + newline.size();
+			m_chunk_size_left = 0;
+			return part_end;
+		}
+	}
+
+	std::string m_chunk_size_string_buffer;
+
+	auto parse_chunk_separator_part(std::span<std::byte const> const new_data) -> std::size_t {
+		auto const data_string = utils::data_to_string<char>(new_data);
+
+		auto const carriage_return_pos = data_string.find(newline[0]);
+		if (carriage_return_pos == std::string_view::npos) {
+			m_chunk_size_string_buffer += data_string;
+			return new_data.size();
+		}
+		else if (m_chunk_size_string_buffer.empty()) {
+			parse_chunk_size_left(data_string.substr(0, carriage_return_pos));
+		}
+		else {
+			m_chunk_size_string_buffer += data_string.substr(0, carriage_return_pos);
+			parse_chunk_size_left(m_chunk_size_string_buffer);
+			m_chunk_size_string_buffer.clear();
+		}
+		if (m_chunk_size_left == 0) {
+			return 0;
+		}
+		return carriage_return_pos + newline.size();
+	}
+
+	/*
+		"part" refers to a separately parsed unit of data.
+		This paritioning makes the parsing algorithm simpler.
+		Returns the position where the part ended.
+		It may be past the end of the part.
+	*/
+	auto parse_next_part(std::span<std::byte const> const new_data) -> std::size_t {
+		if (m_chunk_size_left) {
+			return parse_chunk_body_part(new_data);
+		}
+		else {
+			return parse_chunk_separator_part(new_data);
+		}
+	}
+	
+	std::size_t m_start_parse_offset;
+
+public:
+	auto parse_new_data(std::span<std::byte const> const new_data) -> std::optional<DataVector> {
+		auto cursor = m_start_parse_offset;
+		
+		while (true) {
+			if (cursor >= new_data.size()) {
+				m_start_parse_offset = cursor - new_data.size();
+				return {};
+			}
+			if (auto const cursor_offset = parse_next_part(new_data.subspan(cursor))) {
+				cursor += cursor_offset;
+			}
+			else {
+				return m_result;
+			}
 		}
 	}
 };
@@ -728,6 +813,7 @@ private:
 	
 	[[nodiscard]]
 	auto try_extract_headers_string(std::size_t new_data_start) -> std::optional<std::string_view> {
+		// '\n' line endings are not conformant with the HTTP standard.
 		for (std::string_view const empty_line : {"\r\n\r\n", "\n\n"})
 		{
 			auto const find_start = static_cast<std::size_t>(std::max(std::int64_t{}, 
@@ -757,10 +843,9 @@ private:
 			}
 			else if (auto const transfer_encoding = 
 					algorithms::find_header_by_name(m_result.headers, "transfer-encoding");
-				transfer_encoding && *transfer_encoding == "chunked")
+				transfer_encoding && (*transfer_encoding)->value == "chunked")
 			{
 				m_chunky_body_parser = ChunkyBodyParser{};
-				m_chunky_body_parser.parse_new_data({m_buffer.begin() + m_body_start, m_buffer.end()});
 			}
 		}
 	}
@@ -768,6 +853,10 @@ private:
 	std::optional<ChunkyBodyParser> m_chunky_body_parser;
 
 public:
+	/*
+		Parses a new packet of data from the HTTP response.
+		If it reached the end of the response, the parsed result is returned.
+	*/
 	[[nodiscard]]
 	auto parse_new_data(std::span<std::byte const> const data) -> std::optional<ParsedResponse> {
 		auto const new_data_start = m_buffer.size();
@@ -779,7 +868,10 @@ public:
 		}
 		if (!m_result.headers_string.empty()) {
 			if (m_chunky_body_parser) {
-				if (auto const body = m_chunky_body_parser.parse_new_data(data)) {
+				// May need to add an offset if this packet is
+				// where the headers end and the body starts.
+				auto const body_parse_start = std::max(new_data_start, m_body_start) - new_data_start;
+				if (auto const body = m_chunky_body_parser->parse_new_data(data.subspan(body_parse_start))) {
 					m_result.body_data = std::move(*body);
 					return m_result;
 				}

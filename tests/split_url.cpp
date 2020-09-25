@@ -1,9 +1,6 @@
-#include <catch2/catch.hpp>
+#include "testing_header.hpp"
 
-#include <cpp20_internet_client.hpp>
-
-using namespace internet_client;
-using namespace std::string_view_literals;
+#include <iostream>
 
 TEST_CASE("Trying split_url for https://google.com/") {
 	auto const [protocol, host_name, path] = utils::split_url(u8"https://google.com/"sv);
@@ -34,7 +31,7 @@ TEST_CASE("Trying split_url for github.com") {
 	
 	CHECK(protocol == utils::Protocol::Unknown);
 	CHECK(host_name == u8"github.com");
-	CHECK(path == u8"");
+	CHECK(path == u8"/");
 }
 
 TEST_CASE("Trying split_url for single character.") {
@@ -42,7 +39,7 @@ TEST_CASE("Trying split_url for single character.") {
 
 	CHECK(protocol == utils::Protocol::Unknown);
 	CHECK(host_name == u8"a");
-	CHECK(path == u8"");
+	CHECK(path == u8"/");
 }
 
 TEST_CASE("Trying split_url for empty string.") {

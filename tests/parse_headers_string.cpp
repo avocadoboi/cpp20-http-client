@@ -1,15 +1,10 @@
-#include <catch2/catch.hpp>
-
-#include <cpp20_internet_client.hpp>
-
-using namespace internet_client;
-using namespace std::string_view_literals;
+#include "testing_header.hpp"
 
 TEST_CASE("Trying parse_headers_string with single line") {
 	auto const headers = http::algorithms::parse_headers_string("Last-Modified: tomorrow at 4 am");
 
 	REQUIRE(headers.size() == 1);
-	REQUIRE(headers[0] == http::Header{.name="Last-modified", .value="tomorrow at 4 am"});
+	CHECK(headers[0] == http::Header{.name="Last-modified", .value="tomorrow at 4 am"});
 }
 
 TEST_CASE("Trying parse_headers_string with multiple lines") {
@@ -51,9 +46,9 @@ Three!! ccccccc
 Last-Modified - tomorrow at 4 am
 )"
 	);
-	REQUIRE(headers.size() == 0);
+	CHECK(headers.size() == 0);
 }
 
 TEST_CASE("Trying parse_headers_string with empty string") {
-	REQUIRE(http::algorithms::parse_headers_string("").empty());
+	CHECK(http::algorithms::parse_headers_string("").empty());
 }
