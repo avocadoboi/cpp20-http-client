@@ -680,18 +680,6 @@ struct ParsedResponse {
 	DataVector body_data;
 };
 
-/*
-
-xx\r
-\ny...
-y\r
-\nxxx
-\r
-\ny...
-y\r\nxx\r\ny...y\r\n0\r\n\r\n
-
-*/
-
 class ChunkyBodyParser {
 private:
 	static constexpr auto newline = std::string_view{"\r\n"};
@@ -706,11 +694,13 @@ private:
 			m_chunk_size_left = *result;
 		}
 		else {
-			throw std::logic_error{"Failed parsing chunk size. This is a bug."};
+			throw std::logic_error{"Failed parsing http body chunk size. This is a bug."};
 		}
 	}
 
 	auto parse_chunk_body_part(std::span<std::byte const> const new_data) -> std::size_t {
+		auto const data_string = utils::data_to_string<char>(new_data);
+
 		if (m_chunk_size_left > new_data.size())
 		{
 			m_chunk_size_left -= new_data.size();
@@ -729,27 +719,29 @@ private:
 	}
 
 	std::string m_chunk_size_string_buffer;
+	bool m_is_finished = false;
 
 	auto parse_chunk_separator_part(std::span<std::byte const> const new_data) -> std::size_t {
 		auto const data_string = utils::data_to_string<char>(new_data);
 
-		auto const carriage_return_pos = data_string.find(newline[0]);
-		if (carriage_return_pos == std::string_view::npos) {
+		auto const first_newline_character_pos = data_string.find(newline[0]);
+		if (first_newline_character_pos == std::string_view::npos) {
 			m_chunk_size_string_buffer += data_string;
 			return new_data.size();
 		}
 		else if (m_chunk_size_string_buffer.empty()) {
-			parse_chunk_size_left(data_string.substr(0, carriage_return_pos));
+			parse_chunk_size_left(data_string.substr(0, first_newline_character_pos));
 		}
 		else {
-			m_chunk_size_string_buffer += data_string.substr(0, carriage_return_pos);
+			m_chunk_size_string_buffer += data_string.substr(0, first_newline_character_pos);
 			parse_chunk_size_left(m_chunk_size_string_buffer);
 			m_chunk_size_string_buffer.clear();
 		}
 		if (m_chunk_size_left == 0) {
+			m_is_finished = true;
 			return 0;
 		}
-		return carriage_return_pos + newline.size();
+		return first_newline_character_pos + newline.size();
 	}
 
 	/*
@@ -771,6 +763,10 @@ private:
 
 public:
 	auto parse_new_data(std::span<std::byte const> const new_data) -> std::optional<DataVector> {
+		if (m_is_finished) {
+			return m_result;
+		}
+		
 		auto cursor = m_start_parse_offset;
 		
 		while (true) {
@@ -836,7 +832,7 @@ private:
 		if (auto const headers_string = try_extract_headers_string(new_data_start))
 		{
 			m_result.headers_string = *headers_string;
-			m_result.headers = algorithms::parse_headers_string(*headers_string);
+			m_result.headers = algorithms::parse_headers_string(m_result.headers_string);
 
 			if (auto const body_size_try = get_body_size()) {
 				m_body_size = *body_size_try;
