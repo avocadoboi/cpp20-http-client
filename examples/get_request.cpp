@@ -20,7 +20,6 @@ auto read_url() -> std::string {
 
 auto send_request(std::string_view const url) -> http::GetResponse {
 	return http::get(url)
-		.set_user_agent("GetRequestTest")
 		.add_header({.name="One", .value="aaa"}) // http::Header struct.
 		.add_headers("Two: bbb") // Can be multiple lines for more than one header.
 		.add_headers( // Variadic template
@@ -39,7 +38,7 @@ auto do_request() -> void {
 	auto const response = send_request(url);
 
 	auto const response_headers = response.get_headers_string();
-	std::cout << "Response headers below.\n\n" << response_headers;
+	std::cout << "Response headers below.\n\n" << response_headers << "\n\n";
 
 	if (auto const last_modified = response.get_header_value("last-modified")) { // Case insensitive
 		std::cout << "The resource was last modified " << *last_modified << '\n';
@@ -56,8 +55,8 @@ auto do_request() -> void {
 	}
 
 	auto const filename = [&]{
-		if (auto const filename = utils::extract_filename<char>(url); filename.empty()) {
-			return utils::split_url<char>(url).domain_name;
+		if (auto const filename = utils::extract_filename(std::string_view{url}); filename.empty()) {
+			return utils::split_url(std::string_view{url}).domain_name;
 		}
 		else {
 			return filename;
@@ -72,30 +71,9 @@ auto main() -> int {
 	try {
 		do_request();
 	}
-	catch (errors::InvalidUrl const&) {
-		std::cout << "The url was invalid.\n";
-	}
-	catch (errors::ItemNotFound const&) {
-		std::cout << "The requested file was not found.\n";
-	}
 	catch (errors::ConnectionFailed const& error) {
-		std::cout << "The connection failed: ";
-		switch (error) {
-			// TODO: add using enum declaration when GCC supports it.
-			// using enum error::ConnectionFailed;
-			using namespace errors;
-			case ConnectionFailed::NoInternet:
-				std::cout << "there was no internet connection.\n";
-				break;
-			case ConnectionFailed::Timeout:
-				std::cout << "the connection timed out.\n";
-				break;
-			case ConnectionFailed::Shutdown:
-				std::cout << "the connection shut down.\n";
-				break;
-		}
+		std::cout << "The connection failed, check your internet connection.\n";
 	}
 
 	std::cout << "\n\n";
-	std::system("pause");
 }
