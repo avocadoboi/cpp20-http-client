@@ -149,8 +149,14 @@ auto wide_to_utf8(std::wstring_view const input, std::span<char8_t> output) {
 
 namespace unix {
 
-auto print_openssl_errors() -> void {
-	ERR_print_errors_fp(stdout);
+using UniqueBio = std::unique_ptr<BIO, decltype([](BIO* x){BIO_free(x);})>;
+
+auto get_openssl_error_string() -> std::string {
+	auto const memory_file_handle = UniqueBio{BIO_new(BIO_s_mem())};
+	ERR_print_errors(memory_file_handle.get());
+	auto buffer = static_cast<char*>(nullptr);
+	auto const length = BIO_get_mem_data(memory_file_handle.get(), &buffer);
+	return std::string(static_cast<char const*>(buffer), length);
 }
 
 } // namespace unix
@@ -263,7 +269,7 @@ private:
 
 	SocketHandle m_handle;
 
-	static auto get_address_info(std::u8string_view const server, utils::Port const port)
+	static auto get_address_info(std::u8string_view const server, Port const port)
 	{
 		auto const wide_server_name = utils::win::utf8_to_wide(server);
 		auto const wide_port_string = std::to_wstring(port);
@@ -295,7 +301,7 @@ private:
 		return std::unique_ptr<addrinfoW, decltype([](auto p){FreeAddrInfoW(p);})>{address_info};
 	}
 
-	static auto create_handle(std::u8string_view const server, utils::Port const port) -> SocketHandle {
+	static auto create_handle(std::u8string_view const server, Port const port) -> SocketHandle {
 		auto const address_info = get_address_info(server, port);
 
 		auto const handle_error = [](auto error_message) {
@@ -358,7 +364,7 @@ public:
 		}
 	}
 
-	Implementation(std::u8string_view const server, utils::Port const port) :
+	Implementation(std::u8string_view const server, Port const port) :
 		m_handle{create_handle(server, port)}
 	{}
 };
@@ -432,7 +438,7 @@ private:
 	using AddressInfo = std::unique_ptr<addrinfo, decltype([](auto p){freeaddrinfo(p);})>;
 	AddressInfo m_address_info;
 
-	static auto get_address_info(std::u8string const server, utils::Port const port) -> AddressInfo
+	static auto get_address_info(std::u8string const server, Port const port) -> AddressInfo
 	{
 		auto const port_string = std::to_string(port);
 		auto const hints = addrinfo{
@@ -452,11 +458,10 @@ private:
 			if (result == EAI_AGAIN) {
 				continue;
 			}
-			else if (result == EAI_NONAME) {
-				throw errors::ConnectionFailed{};
-			}
 			else {
-				utils::throw_system_error("Failed to get address info for socket creation", result);
+				throw errors::ConnectionFailed{
+					std::string("Failed to get address info for socket creation: ") + gai_strerror(result)
+				};
 			}
 		}
 
@@ -602,7 +607,7 @@ public:
 	// 	m_is_closed = true;
 	// }
 
-	RawSocket(std::u8string_view const server, utils::Port const port) :
+	RawSocket(std::u8string_view const server, Port const port) :
 		m_address_info{get_address_info(std::u8string{server}, port)}, 
 		m_handle{create_handle()}
 	{}
@@ -610,8 +615,7 @@ public:
 
 class TlsSocket {
 	static auto throw_tls_error() -> void {
-		utils::unix::print_openssl_errors();
-		throw errors::ConnectionFailed{.was_tls_failure = true};
+		throw errors::ConnectionFailed{utils::unix::get_openssl_error_string(), true};
 	}
 
 	using TlsContext = std::unique_ptr<SSL_CTX, decltype([](auto x){SSL_CTX_free(x);})>;
@@ -650,7 +654,7 @@ class TlsSocket {
 			throw_tls_error();
 		}
 	}
-	auto configure_tls_connection(std::u8string const server, utils::Port const port) -> void {
+	auto configure_tls_connection(std::u8string const server, Port const port) -> void {
 		auto const host_name_c_string = utils::u8string_to_utf8_string(server).data();
 
 		// For SNI (Server Name Identification)
@@ -685,7 +689,7 @@ class TlsSocket {
 		}
 	}
 
-	auto initialize_connection(std::u8string const server, utils::Port const port) -> void {
+	auto initialize_connection(std::u8string const server, Port const port) -> void {
 		if (m_raw_socket) {
 			return;
 		}
@@ -786,7 +790,7 @@ public:
 	// 	}
 	// }
 
-	TlsSocket(std::u8string_view const server, utils::Port const port) {
+	TlsSocket(std::u8string_view const server, Port const port) {
 		initialize_connection(std::u8string{server}, port);
 	}
 };
@@ -797,10 +801,10 @@ private:
 	SocketVariant m_socket;
 
 	[[nodiscard]]
-	static auto select_socket(std::u8string_view const server, utils::Port const port)
+	static auto select_socket(std::u8string_view const server, Port const port)
 		-> SocketVariant
 	{
-		if (port == utils::get_port(utils::Protocol::Http)) {
+		if (port == utils::get_port(Protocol::Http)) {
 			return RawSocket{server, port};
 		}
 		return TlsSocket{server, port};
@@ -828,7 +832,7 @@ public:
 		return std::get<TlsSocket>(m_socket).read_available(buffer);
 	}
 
-	Implementation(std::u8string_view const server, utils::Port const port) :
+	Implementation(std::u8string_view const server, Port const port) :
 		m_socket{select_socket(server, port)}
 	{}
 };
@@ -847,7 +851,7 @@ auto Socket::read_available(std::span<std::byte> buffer) const -> std::variant<C
 	return m_implementation->read_available(buffer);
 }
 
-Socket::Socket(std::u8string_view const server, utils::Port const port) :
+Socket::Socket(std::u8string_view const server, Port const port) :
 	m_implementation{std::make_unique<Implementation>(server, port)}
 {}
 Socket::~Socket() = default;

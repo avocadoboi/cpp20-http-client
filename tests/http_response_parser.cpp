@@ -1,13 +1,13 @@
 #include "testing_header.hpp"
 
-auto test_response_parser(std::string_view const input, http::ParsedResponse const& expected_result) 
+auto test_response_parser(std::string_view const input, http::algorithms::ParsedResponse const& expected_result) 
 	-> void 
 {
 	auto const response_data = utils::string_to_data<std::byte>(input);
 
 	for (size_t const packet_size : {1, 8, 32, 128, 512, 2048})
 	{
-		auto parser = http::ResponseParser{};
+		auto parser = http::algorithms::ResponseParser{};
 
 		for (auto pos = std::size_t{};; pos += packet_size) 
 		{
@@ -23,9 +23,9 @@ auto test_response_parser(std::string_view const input, http::ParsedResponse con
 	}
 }
 
-auto string_to_data_vector(std::string_view const string) -> DataVector {
+auto string_to_data_vector(std::string_view const string) -> utils::DataVector {
 	auto const data = utils::string_to_data<std::byte>(string);
-	return DataVector(data.begin(), data.end());
+	return utils::DataVector(data.begin(), data.end());
 }
 
 TEST_CASE("Http response parser, conforming line endings") {
@@ -44,7 +44,7 @@ TEST_CASE("Http response parser, conforming line endings") {
 	auto const input = 
 		expected_headers_string + "\r\n\r\n" + expected_body_string;
 
-	auto const expected_result = http::ParsedResponse{
+	auto const expected_result = http::algorithms::ParsedResponse{
 		.headers_string = expected_headers_string,
 		.headers = {
 			http::Header{.name="content-length", .value="40"},
@@ -73,7 +73,7 @@ TEST_CASE("Http response parser, nonconforming line endings") {
 	auto const input = 
 		expected_headers_string + "\n\n" + expected_body_string;
 
-	auto const expected_result = http::ParsedResponse{
+	auto const expected_result = http::algorithms::ParsedResponse{
 		.headers_string = expected_headers_string,
 		.headers = {
 			http::Header{.name="content-length", .value="40"},
@@ -89,6 +89,6 @@ TEST_CASE("Http response parser, nonconforming line endings") {
 TEST_CASE("Http response parser, no body") {
 	constexpr auto input = "HTTP/1.1 404 Not Found\r\n\r\n";
 
-	auto const expected_result = http::ParsedResponse{.headers_string = "HTTP/1.1 404 Not Found"};
+	auto const expected_result = http::algorithms::ParsedResponse{.headers_string = "HTTP/1.1 404 Not Found"};
 	test_response_parser(input, expected_result);
 }

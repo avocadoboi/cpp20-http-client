@@ -55,6 +55,14 @@ internet_client {
 
 namespace internet_client {
 
+using Port = int;
+
+enum class Protocol : Port {
+	Http = 80,
+	Https = 443,
+	Unknown = -1, 
+};
+
 /*
 	This is everything that doesn't have anything to do with http specifically, 
 	but are utilities that are used within the library.
@@ -181,7 +189,7 @@ template<
 		even when the base type is contiguous, so we can't use that constraint.
 	*/
 	std::ranges::range _Range,
-	IsAnyOf<char8_t, char> _Char = std::ranges::range_value_t<_Range>
+	IsByteChar _Char = std::ranges::range_value_t<_Range>
 > 
 [[nodiscard]] 
 constexpr auto range_to_string_view(_Range const& range) 
@@ -204,7 +212,7 @@ auto enable_utf8_console() -> void;
 */
 template<
 	std::ranges::sized_range _Range,
-	IsAnyOf<char8_t, char> _Char = std::ranges::range_value_t<_Range>,
+	IsByteChar _Char = std::ranges::range_value_t<_Range>,
 	typename _String = std::basic_string<_Char>
 > 
 [[nodiscard]]
@@ -219,7 +227,7 @@ inline auto range_to_string(_Range const& range) -> _String {
 */
 template<
 	std::ranges::range _Range,
-	IsAnyOf<char8_t, char> _Char = std::ranges::range_value_t<_Range>,
+	IsByteChar _Char = std::ranges::range_value_t<_Range>,
 	typename _String = std::basic_string_view<_Char>
 > 
 [[nodiscard]]
@@ -230,7 +238,7 @@ inline auto range_to_string(_Range const& range) -> _String {
 }
 
 template<
-	IsAnyOf<char8_t, char> _Char, 
+	IsByteChar _Char, 
 	IsByte _Byte, 
 	typename _String = std::basic_string_view<_Char>
 >
@@ -247,6 +255,9 @@ auto string_to_data(IsByteStringView auto string) -> std::span<_Byte const> {
 
 //---------------------------------------------------------
 
+using DataVector = std::vector<std::byte>;
+
+//---------------------------------------------------------
 
 template<std::integral T>
 auto string_to_integral(IsByteStringView auto const string, int base = 10) -> std::optional<T> {
@@ -257,6 +268,9 @@ auto string_to_integral(IsByteStringView auto const string, int base = 10) -> st
 	}
 	return {};
 }
+
+// template<IsByteChar _Char>
+// auto integral_to_string(std::integral auto number) -> std::
 
 //---------------------------------------------------------
 
@@ -300,14 +314,6 @@ constexpr auto equal_ascii_case_insensitive(
 
 //---------------------------------------------------------
 
-using Port = int;
-
-enum class Protocol : Port {
-	Http = 80,
-	Https = 443,
-	Unknown = -1, 
-};
-
 constexpr auto get_port(Protocol protocol) noexcept -> Port {
 	return static_cast<Port>(protocol);
 }
@@ -348,7 +354,7 @@ struct SplitUrl {
 */
 template<IsByteStringView _StringView, typename _Char = _StringView::value_type>
 [[nodiscard]] 
-inline auto split_url(_StringView const url) noexcept 
+inline auto split_url(_StringView const url) 
 	-> SplitUrl<_Char>
 {
 	using namespace std::string_view_literals;
@@ -394,7 +400,7 @@ inline auto split_url(_StringView const url) noexcept
 	Returns the file name part of a URL (or file path with only forward slashes).
 */
 template<IsByteStringView _StringView, typename _Char = _StringView::value_type>
-constexpr auto extract_filename(_StringView const url) noexcept 
+constexpr auto extract_filename(_StringView const url) 
 	-> _StringView
 {
 	if (auto const slash_pos = url.rfind(select_on_type<_Char>(u8'/', '/'));
@@ -422,11 +428,37 @@ constexpr auto get_is_allowed_uri_character(char const character) noexcept
 		other_characters.find(character) != std::string_view::npos;
 }
 
+template<
+	IsByteStringView _StringView, 
+	typename _Char = _StringView::value_type, 
+	typename _String = std::basic_string<_Char>
+>
+auto uri_encode(_StringView const uri) -> _String {
+	using namespace std::string_view_literals;
+	
+	auto result_string = _String();
+	result_string.reserve(uri.size());
+
+	for (auto const character : uri) {
+		if (get_is_allowed_uri_character(character)) {
+			result_string += character;
+		}
+		else {
+			result_string += select_on_type<_StringView>("%xx"sv, u8"%xx"sv);
+			auto const result = std::to_chars(
+				reinterpret_cast<char*>(&result_string.back() - 1), 
+				reinterpret_cast<char*>(&result_string.back() + 1), 
+				static_cast<unsigned char>(character), 
+				16
+			);
+		}
+	}
+	return result_string;
+}
+
 } // namespace utils
 
 //---------------------------------------------------------
-
-// TODO: Add forwarding of error messages from APIs such as OpenSSL.
 
 /*
 	A minimal collection of internet related errors you should catch and handle yourself.
@@ -438,21 +470,34 @@ namespace errors {
 	For example, the domain part could be missing, or the
 	IP address could have a number missing.
 */
-struct InvalidUrl {};
+// struct InvalidUrl {};
 
 /*
 	The connection to the server failed in some way.
 	For example, there is no internet connection or the server name is invalid.
 */
-struct ConnectionFailed {	
-	bool was_tls_failure{};
+class ConnectionFailed : public std::exception {
+private:
+	std::string m_reason;
+public:
+	auto what() const noexcept -> char const* override {
+		return m_reason.c_str();
+	}
+
+private:
+	bool m_is_tls_failure;
+public:
+	auto get_is_tls_failure() -> bool {
+		return m_is_tls_failure;
+	}
+
+	ConnectionFailed(std::string reason, bool is_tls_failure = false) :
+		m_reason(std::move(reason)),
+		m_is_tls_failure{is_tls_failure}
+	{}
 };
 
 } // namespace errors
-
-//---------------------------------------------------------
-
-using DataVector = std::vector<std::byte>;
 
 //---------------------------------------------------------
 
@@ -491,8 +536,8 @@ public:
 		The returned DataVector may be smaller than what was requested.
 	*/
 	[[nodiscard]]
-	auto read(std::size_t const number_of_bytes = 512) const -> std::variant<ConnectionClosed, DataVector> {
-		auto result = DataVector(number_of_bytes);
+	auto read(std::size_t const number_of_bytes = 512) const -> std::variant<ConnectionClosed, utils::DataVector> {
+		auto result = utils::DataVector(number_of_bytes);
 		if (auto const read_result = read(result); std::holds_alternative<std::size_t>(read_result)) {
 			result.resize(std::get<std::size_t>(read_result));
 			return result;
@@ -512,15 +557,15 @@ public:
 	/*
 		Reads any available data from the socket into a buffer.
 		This function is nonblocking, and may return an empty vector if 
-		there was no data available. The function either returns a DataVector 
+		there was no data available. The function either returns a utils::DataVector 
 		of the data that was read or a ConnectionClosed instance if the peer 
 		closed the connection.
 	*/
 	[[nodiscard]]
-	auto read_available() const -> std::variant<ConnectionClosed, DataVector> {
+	auto read_available() const -> std::variant<ConnectionClosed, utils::DataVector> {
 		constexpr auto read_buffer_size = 512;
 
-		auto buffer = DataVector(read_buffer_size);
+		auto buffer = utils::DataVector(read_buffer_size);
 		auto read_offset = std::size_t{};
 
 		while (true) {
@@ -552,12 +597,12 @@ private:
 	class Implementation;
 	std::unique_ptr<Implementation> m_implementation;
 	
-	Socket(std::u8string_view server, utils::Port port);
-	friend auto open_socket(std::u8string_view server, utils::Port port) -> Socket;
+	Socket(std::u8string_view server, Port port);
+	friend auto open_socket(std::u8string_view server, Port port) -> Socket;
 };
 
 [[nodiscard]]
-inline auto open_socket(std::u8string_view const server, utils::Port const port) -> Socket {
+inline auto open_socket(std::u8string_view const server, Port const port) -> Socket {
 	return Socket{server, port};
 }
 
@@ -614,7 +659,119 @@ auto operator==(IsHeader auto const& lhs, IsHeader auto const& rhs) -> bool {
 	) && lhs.value == rhs.value;
 }
 
+enum class StatusCode {
+	Continue = 100,
+	SwitchingProtocols = 101,
+	Processing = 102,
+	EarlyHints = 103,
+
+	Ok = 200,
+	Created = 201,
+	Accepted = 202,
+	NonAuthoritativeInformation = 203,
+	NoContent = 204,
+	ResetContent = 205,
+	PartialContent = 206,
+	MultiStatus = 207,
+	AlreadyReported = 208,
+	ImUsed = 226,
+
+	MultipleChoices = 300,
+	MovedPermanently = 301,
+	Found = 302,
+	SeeOther = 303,
+	NotModified = 304,
+	UseProxy = 305,
+	SwitchProxy = 306,
+	TemporaryRedirect = 307,
+	PermanentRedirect = 308,
+
+	BadRequest = 400,
+	Unauthorized = 401,
+	PaymentRequired = 402,
+	Forbidden = 403,
+	NotFound = 404,
+	MethodNotAllowed = 405,
+	NotAcceptable = 406,
+	ProxyAuthenticationRequired = 407,
+	RequestTimeout = 408,
+	Conflict = 409,
+	Gone = 410,
+	LengthRequired = 411,
+	PreconditionFailed = 412,
+	PayloadTooLarge = 413,
+	UriTooLong = 414,
+	UnsupportedMediaType = 415,
+	RangeNotSatisfiable = 416,
+	ExpectationFailed = 417,
+	ImATeapot = 418,
+	MisdirectedRequest = 421,
+	UnprocessableEntity = 422,
+	Locked = 423,
+	FailedDependency = 424,
+	TooEarly = 425,
+	UpgradeRequired = 426,
+	PreconditionRequired = 428,
+	TooManyRequests = 429,
+	RequestHeaderFieldsTooLarge = 431,
+	UnavailableForLegalReasons = 451,
+
+	InternalServerError = 500,
+	NotImplemented = 501,
+	BadGateway = 502,
+	ServiceUnavailable = 503,
+	GatewayTimeout = 504,
+	HttpVersionNotSupported = 505,
+	VariantAlsoNegotiates = 506,
+	InsufficientStorage = 507,
+	LoopDetected = 508,
+	NotExtended = 510,
+	NetworkAuthenticationRequired = 511,
+
+	Unknown = -1
+};
+
 namespace algorithms {
+
+struct StatusLine {
+	std::string http_version;
+	StatusCode status_code = StatusCode::Unknown;
+	std::string status_message;
+};
+
+[[nodiscard]]
+inline auto parse_status_line(std::string_view const line) -> StatusLine {
+	auto status_line = StatusLine{};
+
+	auto cursor = size_t{};
+	
+	if (auto const http_version_end = line.find(' '); http_version_end != std::string_view::npos)
+	{
+		status_line.http_version = line.substr(0, http_version_end);
+		cursor = http_version_end + 1;
+	}
+	else {
+		return status_line;
+	}
+
+	if (auto const status_code_end = line.find(' ', cursor); status_code_end != std::string_view::npos) 
+	{
+		if (auto const status_code = utils::string_to_integral<int>(line.substr(cursor, status_code_end))) 
+		{
+			status_line.status_code = static_cast<StatusCode>(*status_code);
+		}
+		else {
+			return status_line;
+		}
+		cursor = status_code_end + 1;
+	}
+	else {
+		return status_line;
+	}
+	
+	status_line.status_message = line.substr(cursor, line.find_last_not_of(std::string_view{"\r\n "}) + 1 - cursor);
+	return status_line;
+}
 
 [[nodiscard]] 
 inline auto parse_headers_string(std::string_view const headers) -> std::vector<Header>
@@ -670,21 +827,18 @@ inline auto find_header_by_name(std::span<Header> const headers, std::string_vie
 	});
 }
 
-} // namespace algorithms
-
-//---------------------------------------------------------
-
 struct ParsedResponse {
+	StatusLine status_line;
 	std::string headers_string;
 	std::vector<Header> headers;
-	DataVector body_data;
+	utils::DataVector body_data;
 };
 
 class ChunkyBodyParser {
 private:
 	static constexpr auto newline = std::string_view{"\r\n"};
 
-	DataVector m_result;
+	utils::DataVector m_result;
 
 	std::size_t m_chunk_size_left;
 
@@ -762,7 +916,7 @@ private:
 	std::size_t m_start_parse_offset;
 
 public:
-	auto parse_new_data(std::span<std::byte const> const new_data) -> std::optional<DataVector> {
+	auto parse_new_data(std::span<std::byte const> const new_data) -> std::optional<utils::DataVector> {
 		if (m_is_finished) {
 			return m_result;
 		}
@@ -786,7 +940,7 @@ public:
 
 class ResponseParser {
 private:
-	DataVector m_buffer;
+	utils::DataVector m_buffer;
 
 	ParsedResponse m_result;
 
@@ -874,13 +1028,17 @@ public:
 			}
 			else if (m_buffer.size() >= m_body_start + m_body_size) {
 				auto const body_begin = m_buffer.begin() + m_body_start;
-				m_result.body_data = DataVector(body_begin, body_begin + m_body_size);
+				m_result.body_data = utils::DataVector(body_begin, body_begin + m_body_size);
 				return m_result;
 			}
 		}
 		return {};
 	}
 };
+
+} // namespace algorithms
+
+//---------------------------------------------------------
 
 /*
 	Represents the response of a HTTP "GET" request.
@@ -891,10 +1049,14 @@ class GetResponse {
 private:
 	Socket m_socket;
 
-	std::optional<ParsedResponse> mutable m_parsed_response;
+	std::optional<algorithms::ParsedResponse> mutable m_parsed_response;
 
 	auto read_response() const -> void {
-		auto response_parser = ResponseParser{};
+		if (m_parsed_response) {
+			return;
+		}
+
+		auto response_parser = algorithms::ResponseParser{};
 
 		constexpr auto buffer_size = 512;
 		auto read_buffer = std::array<std::byte, buffer_size>();
@@ -912,12 +1074,28 @@ private:
 				}
 			}
 			else { // Connection closed
-				throw errors::ConnectionFailed{};
+				throw errors::ConnectionFailed{"The peer closed the connection unexpectedly"};
 			}			
 		}
 	}
 
 public:
+	[[nodiscard]]
+	auto get_status_code() const -> StatusCode {
+		read_response();
+		return m_parsed_response->status_line.status_code;
+	}
+	[[nodiscard]]
+	auto get_status_message() const -> std::string_view {
+		read_response();
+		return m_parsed_response->status_line.status_message;
+	}
+	[[nodiscard]]
+	auto get_http_version() const -> std::string_view {
+		read_response();
+		return m_parsed_response->status_line.http_version;
+	}
+
 	/*
 		Returns the headers of the GET response as a string.
 		The returned string_view shall not outlive this GetResponse object.
@@ -925,9 +1103,7 @@ public:
 	*/
 	[[nodiscard]] 
 	auto get_headers_string() const -> std::string_view {
-		if (!m_parsed_response) {
-			read_response();
-		}
+		read_response();
 		return m_parsed_response->headers_string;
 	}
 
@@ -936,9 +1112,7 @@ private:
 	auto find_header(std::string_view const name_to_find) const
 		-> std::optional<std::span<Header>::iterator>
 	{
-		if (!m_parsed_response) {
-			read_response();
-		}
+		read_response();
 		return algorithms::find_header_by_name(m_parsed_response->headers, name_to_find);
 	}
 
@@ -950,9 +1124,7 @@ public:
 	*/
 	[[nodiscard]] 
 	auto get_headers() const -> std::span<Header> {
-		if (!m_parsed_response) {
-			read_response();
-		}
+		read_response();
 		return m_parsed_response->headers;
 	}
 	/*
@@ -991,9 +1163,7 @@ public:
 	*/
 	[[nodiscard]]
 	auto get_body() const -> std::span<std::byte> {
-		if (!m_parsed_response) {
-			read_response();
-		}
+		read_response();
 		return m_parsed_response->body_data;
 	}
 	/*
@@ -1104,7 +1274,6 @@ public:
 
 private:
 	utils::SplitUrl<char8_t> m_split_url;
-	Socket m_socket;
 
 public:
 	/*
@@ -1112,11 +1281,13 @@ public:
 	*/
 	[[nodiscard]] 
 	auto send() && -> GetResponse {
+		auto socket = open_socket(m_split_url.domain_name, utils::get_port(m_split_url.protocol));
+		
 		// TODO: Use std::format when it has been implemented by compilers.
 		auto const request_string = (((((std::string{"GET "} += utils::u8string_to_utf8_string(m_split_url.path)) += 
 			" HTTP/1.1\r\nHost: ") += utils::u8string_to_utf8_string(m_split_url.domain_name)) += m_headers) += "\r\n");
-		m_socket.write(std::string_view{request_string});
-		return GetResponse{std::move(m_socket)};
+		socket.write(std::string_view{request_string});
+		return GetResponse{std::move(socket)};
 	}
 
 	GetRequest() = delete;
@@ -1129,11 +1300,14 @@ public:
 	auto operator=(GetRequest const&) -> GetRequest& = delete;
 
 private:
-	friend auto get(std::u8string_view url) -> GetRequest;
-	GetRequest(std::u8string_view const url) :
-		m_split_url{utils::split_url(url)},
-		m_socket{open_socket(m_split_url.domain_name, utils::get_port(m_split_url.protocol))}
-	{}
+	friend auto get(std::u8string_view, Protocol) -> GetRequest;
+	GetRequest(std::u8string_view const url, Protocol default_protocol) :
+		m_split_url{utils::split_url(url)}
+	{
+		if (m_split_url.protocol == Protocol::Unknown) {
+			m_split_url.protocol = default_protocol;
+		}
+	}
 };
 
 /*
@@ -1141,16 +1315,16 @@ private:
 	url is a URL to the server or resource that the GET request targets.
 */
 [[nodiscard]] 
-inline auto get(std::u8string_view const url) -> GetRequest {
-	return GetRequest{url};
+inline auto get(std::u8string_view const url, Protocol default_protocol = Protocol::Http) -> GetRequest {
+	return GetRequest{url, default_protocol};
 }
 /*
 	Creates a GET request.
 	url is a URL to the server or resource that the GET request targets.
 */
 [[nodiscard]] 
-inline auto get(std::string_view const url) -> GetRequest {
-	return get(utils::utf8_string_to_u8string(url));
+inline auto get(std::string_view const url, Protocol default_protocol = Protocol::Http) -> GetRequest {
+	return get(utils::utf8_string_to_u8string(url), default_protocol);
 }
 
 } // namespace http
