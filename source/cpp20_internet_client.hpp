@@ -769,7 +769,7 @@ inline auto parse_status_line(std::string_view const line) -> StatusLine {
 		return status_line;
 	}
 	
-	status_line.status_message = line.substr(cursor, line.find_last_not_of(std::string_view{"\r\n "}) + 1 - cursor);
+	status_line.status_message = line.substr(cursor, line.find_last_not_of("\r\n ") + 1 - cursor);
 	return status_line;
 }
 
@@ -986,7 +986,19 @@ private:
 		if (auto const headers_string = try_extract_headers_string(new_data_start))
 		{
 			m_result.headers_string = *headers_string;
-			m_result.headers = algorithms::parse_headers_string(m_result.headers_string);
+
+			auto const status_line_end = m_result.headers_string.find_first_of("\r\n");
+			if (status_line_end == std::string_view::npos) {
+				status_line_end = 0; // Should really never happen
+			}
+			
+			m_result.status_line = algorithms::parse_status_line(
+				std::string_view{m_result.headers_string}.substr(0, status_line_end)
+			);
+
+			m_result.headers = algorithms::parse_headers_string(
+				std::string_view{m_result.headers_string}.substr(status_line_end)
+			);
 
 			if (auto const body_size_try = get_body_size()) {
 				m_body_size = *body_size_try;
