@@ -29,6 +29,7 @@ SOFTWARE.
 #include <concepts>
 #include <fstream>
 #include <functional>
+#include <future>
 #include <memory>
 #include <ranges>
 #include <stdexcept>
@@ -420,7 +421,7 @@ constexpr auto extract_filename(_StringView const url)
 constexpr auto get_is_allowed_uri_character(char const character) noexcept 
 	-> bool 
 {
-	constexpr auto other_characters = std::string_view{"-._~:/?#[]@!$&'()*+,;="};
+	constexpr auto other_characters = std::string_view{"%-._~:/?#[]@!$&'()*+,;="};
 	
 	return character >= '0' && character <= '9' || 
 		character >= 'a' && character <= 'z' ||
@@ -536,7 +537,9 @@ public:
 		The returned DataVector may be smaller than what was requested.
 	*/
 	[[nodiscard]]
-	auto read(std::size_t const number_of_bytes = 512) const -> std::variant<ConnectionClosed, utils::DataVector> {
+	auto read(std::size_t const number_of_bytes = 512) const 
+		-> std::variant<ConnectionClosed, utils::DataVector> 
+	{
 		auto result = utils::DataVector(number_of_bytes);
 		if (auto const read_result = read(result); std::holds_alternative<std::size_t>(read_result)) {
 			result.resize(std::get<std::size_t>(read_result));
@@ -987,7 +990,7 @@ private:
 		{
 			m_result.headers_string = *headers_string;
 
-			auto const status_line_end = m_result.headers_string.find_first_of("\r\n");
+			auto status_line_end = m_result.headers_string.find_first_of("\r\n");
 			if (status_line_end == std::string_view::npos) {
 				status_line_end = 0; // Should really never happen
 			}
@@ -1183,10 +1186,11 @@ public:
 		The returned std::u8string_view shall not outlive this GetResponse object.
 		I wish there was a way to statically enforce this in c++.
 	*/
+	template<utils::IsByteChar _Char>
 	[[nodiscard]] 
-	auto get_body_string() const -> std::u8string_view
+	auto get_body_string() const -> std::basic_string_view<_Char>
 	{
-		return utils::data_to_string<char8_t>(get_body());
+		return utils::data_to_string<_Char>(get_body());
 	}
 
 	// TODO: support unicode file names by creating our own simple file I/O API. 
@@ -1203,6 +1207,14 @@ public:
 		file_stream.write(reinterpret_cast<char const*>(body.data()), body.size());
 	}
 
+private:
+	std::u8string m_url;
+public:
+	template<utils::IsByteChar _Char>
+	auto get_url() const -> std::basic_string_view<_Char> {
+		return std::basic_string_view<_Char>{reinterpret_cast<_Char const*>(m_url.data()), m_url.size()};
+	}
+
 	GetResponse() = delete;
 	~GetResponse() = default;
 	
@@ -1213,7 +1225,7 @@ public:
 	auto operator=(GetResponse const&) -> GetResponse& = delete;
 
 private:
-	GetResponse(Socket&& socket) :
+	GetResponse(Socket&& socket, std::u8string url) :
 		m_socket{std::move(socket)}
 	{}
 };
@@ -1285,6 +1297,7 @@ public:
 	}
 
 private:
+	std::u8string m_url;
 	utils::SplitUrl<char8_t> m_split_url;
 
 public:
@@ -1299,7 +1312,7 @@ public:
 		auto const request_string = (((((std::string{"GET "} += utils::u8string_to_utf8_string(m_split_url.path)) += 
 			" HTTP/1.1\r\nHost: ") += utils::u8string_to_utf8_string(m_split_url.domain_name)) += m_headers) += "\r\n");
 		socket.write(std::string_view{request_string});
-		return GetResponse{std::move(socket)};
+		return GetResponse{std::move(socket), m_url};
 	}
 
 	GetRequest() = delete;
@@ -1314,7 +1327,8 @@ public:
 private:
 	friend auto get(std::u8string_view, Protocol) -> GetRequest;
 	GetRequest(std::u8string_view const url, Protocol default_protocol) :
-		m_split_url{utils::split_url(url)}
+		m_url{utils::uri_encode(url)},
+		m_split_url{utils::split_url(std::u8string_view{m_url})}
 	{
 		if (m_split_url.protocol == Protocol::Unknown) {
 			m_split_url.protocol = default_protocol;

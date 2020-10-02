@@ -20,6 +20,11 @@ TEST_CASE("uri_encode with std::string_view #2") {
         "https://pt.wikipedia.org/wiki/Codifica%c3%a7%c3%a3o_por_cento");
 }
 
+TEST_CASE("uri_encode with already encoded std::string_view") {
+    auto const url = "https://ja.wikipedia.org/wiki/%E3%83%A1%E3%82%A4%E3%83%B3%E3%83%9A%E3%83%BC%E3%82%B8"sv;
+    REQUIRE(utils::uri_encode(url) == url);
+}
+
 TEST_CASE("uri_encode with empty string") {
     CHECK(utils::uri_encode(""sv) == "");
     CHECK(utils::uri_encode(u8""sv) == u8"");

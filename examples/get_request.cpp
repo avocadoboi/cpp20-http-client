@@ -32,11 +32,7 @@ auto send_request(std::string_view const url) -> http::GetResponse {
 		}).send();
 }
 
-auto do_request() -> void {
-	auto const url = read_url();
-	
-	auto const response = send_request(url);
-
+auto use_response(http::GetResponse const& response) -> void {
 	auto const response_headers = response.get_headers_string();
 	std::cout << "Response headers below.\n\n" << response_headers << "\n\n";
 
@@ -54,9 +50,11 @@ auto do_request() -> void {
 		std::cout << "No content-type header.\n";
 	}
 
+	auto const url = response.get_url<char>();
+
 	auto const filename = [&]{
-		if (auto const filename = utils::extract_filename(std::string_view{url}); filename.empty()) {
-			return utils::split_url(std::string_view{url}).domain_name;
+		if (auto const filename = utils::extract_filename(url); filename.empty()) {
+			return utils::split_url(url).domain_name;
 		}
 		else {
 			return filename;
@@ -67,12 +65,31 @@ auto do_request() -> void {
 	response.write_body_to_file(std::string{filename});
 }
 
+auto do_request() -> http::GetResponse {
+	auto url = read_url();
+
+	while (true) {
+		auto response = send_request(url);
+
+		// Handle possible TLS redirect
+		if (response.get_status_code() == http::StatusCode::MovedPermanently) {
+			if (auto const new_url = response.get_header_value("location")) {
+				std::cout << "Got status code moved permanently, redirecting to " << *new_url << "...\n\n";
+				url = *new_url;
+				continue;
+			}
+		}
+		return response;
+	}
+}
+
 auto main() -> int {
 	try {
-		do_request();
+		auto const response = do_request();
+		use_response(response);
 	}
 	catch (errors::ConnectionFailed const& error) {
-		std::cout << "The connection failed, check your internet connection.\n";
+		std::cout << "The connection failed with error \"" << error.what() << '"';
 	}
 
 	std::cout << "\n\n";
