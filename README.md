@@ -6,12 +6,12 @@ As of now, only gcc supports all of the c++20 features used in this library. Add
 
 
 ## Aims
-* User friendly, functional design
-* An API that is hard to misuse
-* All calculations and internal API calls are lazily made and cached
-* Library code follows c++ core guidelines
-* A single module file when build systems and compilers have good support for modules
+* User friendly, functional design.
+* An API that is hard to misuse.
+* Library code follows c++ core guidelines.
+* A single module file when build systems and compilers have good support for modules.
 * Support for GET and POST requests, both unsecured and over TLS.
+* Support for asynchronous requests.
 * Support for Windows, Linux and MacOS.
 
 
