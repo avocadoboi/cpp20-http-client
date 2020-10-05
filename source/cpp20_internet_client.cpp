@@ -169,10 +169,10 @@ auto get_openssl_error_string() -> std::string {
 
 auto throw_system_error(
 	std::string reason,
-	std::error_code const error_code = static_cast<int>(GetLastError())
+	int const error_code = static_cast<int>(GetLastError())
 ) -> void {
 	reason += " with code ";
-	reason += std::to_string(error_code.value());
+	reason += std::to_string(error_code);
 	throw std::system_error{error_code, std::system_category(), reason};
 }
 
@@ -263,13 +263,14 @@ public:
 	auto operator=(SocketHandle const&) -> SocketHandle& = delete;
 };
 
-class Socket::Implementation {
+class RawSocket {
 private:
 	WinSockLifetime m_api_lifetime;
 
-	SocketHandle m_handle;
+	using AddressInfo = std::unique_ptr<addrinfoW, decltype([](auto p){FreeAddrInfoW(p);})>;
+	AddressInfo m_address_info;
 
-	static auto get_address_info(std::u8string_view const server, Port const port)
+	static auto get_address_info(std::u8string_view const server, Port const port) -> AddressInfo
 	{
 		auto const wide_server_name = utils::win::utf8_to_wide(server);
 		auto const wide_port_string = std::to_wstring(port);
@@ -290,20 +291,19 @@ private:
 			if (result == EAI_AGAIN) {
 				continue;
 			}
-			else if (result == WSAHOST_NOT_FOUND) {
-				throw errors::ConnectionFailed{};
-			}
 			else {
-				utils::throw_system_error("Failed to get address info for socket creation", result);
+				throw errors::ConnectionFailed{
+					std::string("Failed to get address info for socket creation: ") + gai_strerror(result)
+				};
 			}
 		}
 
-		return std::unique_ptr<addrinfoW, decltype([](auto p){FreeAddrInfoW(p);})>{address_info};
+		return AddressInfo{address_info};
 	}
 
-	static auto create_handle(std::u8string_view const server, Port const port) -> SocketHandle {
-		auto const address_info = get_address_info(server, port);
+	SocketHandle m_handle;
 
+	auto create_handle() const -> SocketHandle {
 		auto const handle_error = [](auto error_message) {
 			if (auto const error_code = WSAGetLastError(); error_code != WSAEINPROGRESS) {
 				utils::throw_system_error(error_message, error_code);
@@ -314,9 +314,9 @@ private:
 
 		auto socket_handle = SocketHandle{};
 		while ((socket_handle = socket(
-				address_info->ai_family, 
-				address_info->ai_socktype, 
-				address_info->ai_protocol
+				m_address_info->ai_family, 
+				m_address_info->ai_socktype, 
+				m_address_info->ai_protocol
 			)).get() == INVALID_SOCKET) 
 		{
 			handle_error("Failed to create socket");
@@ -324,8 +324,8 @@ private:
 
 		while (connect(
 				socket_handle.get(), 
-				address_info->ai_addr, 
-				static_cast<int>(address_info->ai_addrlen)
+				m_address_info->ai_addr, 
+				static_cast<int>(m_address_info->ai_addrlen)
 			) == SOCKET_ERROR)
 		{
 			handle_error("Failed to connect socket");
@@ -334,8 +334,33 @@ private:
 		return socket_handle;
 	}
 
+	bool m_is_nonblocking = false;
+
 public:
+	auto set_is_nonblocking(bool const p_is_nonblocking) -> void {
+		if (m_is_nonblocking == p_is_nonblocking) {
+			return;
+		}
+		auto is_nonblocking = static_cast<u_long>(p_is_nonblocking);
+		ioctlsocket(m_handle.get(), FIONBIO, &is_nonblocking);
+	}
+	auto get_winsock_handle() -> SOCKET {
+		return m_handle.get();
+	}
+
+private:
+	bool m_is_closed = false;
+	
+public:
+	auto reconnect() -> void {
+		m_handle = create_handle();
+		m_is_closed = false;
+	}
 	auto write(std::span<std::byte const> const data) -> void {
+		if (m_is_closed) {
+			reconnect();
+		}
+
 		if (::send(
 				m_handle.get(), 
 				reinterpret_cast<char const*>(data.data()), 
@@ -345,28 +370,56 @@ public:
 		{
 			utils::throw_system_error("Failed to send data through socket", WSAGetLastError());
 		}
-		if (shutdown(m_handle.get(), SD_SEND) == SOCKET_ERROR) {
-			utils::throw_system_error("Failed to shut down socket connection after sending data", WSAGetLastError());
-		}
 	}
-	auto read(std::span<std::byte> buffer) -> std::size_t {
-		if (auto const result = recv(
+	auto read(std::span<std::byte> const buffer, bool const is_nonblocking) -> std::variant<ConnectionClosed, std::size_t> {
+		if (m_is_closed) {
+			return std::size_t{};
+		}
+
+		set_is_nonblocking(is_nonblocking);
+
+		if (auto const receive_result = recv(
 				m_handle.get(), 
 				reinterpret_cast<char*>(buffer.data()), 
 				static_cast<int>(buffer.size()), 
 				0
-			); result >= 0)
+			); receive_result >= 0)
 		{
-			return static_cast<std::size_t>(result);
+			if (receive_result == 0) {
+				m_is_closed = true;
+				return ConnectionClosed{};
+			} 
+			return static_cast<std::size_t>(receive_result);
+		}
+		else if (is_nonblocking && WSAGetLastError() == WSAEWOULDBLOCK) {
+			return std::size_t{};
 		}
 		else {
 			utils::throw_system_error("Failed to receive data through socket");
 		}
+		return {};
+	}
+	auto read_available(std::span<std::byte> const buffer) -> std::variant<ConnectionClosed, std::size_t> {
+		return read(buffer, true);
 	}
 
-	Implementation(std::u8string_view const server, Port const port) :
-		m_handle{create_handle(server, port)}
+	RawSocket(std::u8string_view const server, Port const port) :
+		m_address_info{get_address_info(server, port)},
+		m_handle{create_handle()}
 	{}
+};
+
+class TlsSocket {
+private:
+	std::unique_ptr<RawSocket> m_raw_socket;
+
+	auto initialize_connection(std::u8string_view const server, Port const port) -> void {
+		if (m_raw_socket) {
+			return;
+		}
+	} 
+
+public:
 };
 
 #endif // _WIN32
@@ -551,15 +604,16 @@ public:
 			utils::throw_system_error("Failed to send data through socket");
 		}
 	}
-	auto read(std::span<std::byte> const buffer) -> std::variant<ConnectionClosed, std::size_t> {
+	auto read(std::span<std::byte> const buffer, bool is_nonblocking = false) -> std::variant<ConnectionClosed, std::size_t> {
 		if (m_is_closed) {
 			return std::size_t{};
 		}
 
-		if (auto const receive_result = ::read(
+		if (auto const receive_result = recv(
 				m_handle.get(), 
-				buffer.data(), 
-				static_cast<int>(buffer.size())
+				reinterpret_cast<char*>(buffer.data()), 
+				static_cast<int>(buffer.size()),
+				is_nonblocking ? MSG_DONTWAIT : 0
 			); receive_result >= 0)
 		{
 			if (receive_result == 0) {
@@ -567,6 +621,9 @@ public:
 				return ConnectionClosed{};
 			}
 			return static_cast<std::size_t>(receive_result);
+		}
+		else if (is_nonblocking && (errno == EWOULDBLOCK || errno == EAGAIN)) {
+			return std::size_t{};
 		}
 		else {
 			utils::throw_system_error("Failed to receive data through socket");
@@ -574,30 +631,7 @@ public:
 		return {};
 	}
 	auto read_available(std::span<std::byte> const buffer) -> std::variant<ConnectionClosed, std::size_t> {
-		if (m_is_closed) {
-			return std::size_t{};
-		}
-		
-		if (auto const receive_result = recv(
-				m_handle.get(), 
-				reinterpret_cast<char*>(buffer.data()), 
-				static_cast<int>(buffer.size()), 
-				MSG_DONTWAIT
-			); receive_result >= 0)
-		{
-			if (receive_result == 0) {
-				m_is_closed = true;
-				return ConnectionClosed{};
-			}
-			return static_cast<std::size_t>(receive_result);
-		}
-		else if (errno == EWOULDBLOCK || errno == EAGAIN) {
-			return std::size_t{};
-		}
-		else {
-			utils::throw_system_error("Failed to receive data through socket");
-		}
-		return {};
+		return read(buffer, true);
 	}
 
 	// auto close() -> void {
@@ -689,13 +723,13 @@ class TlsSocket {
 		}
 	}
 
-	auto initialize_connection(std::u8string const server, Port const port) -> void {
+	auto initialize_connection(std::u8string_view const server, Port const port) -> void {
 		if (m_raw_socket) {
 			return;
 		}
 
 		configure_tls_context();
-		configure_tls_connection(server, port);
+		configure_tls_connection(std::u8string{server}, port);
 		connect();
 	}
 
@@ -726,7 +760,7 @@ public:
 			utils::throw_system_error("Failed to send data through socket");
 		}
 	}
-	auto read(std::span<std::byte> buffer) -> std::variant<ConnectionClosed, std::size_t> {
+	auto read(std::span<std::byte> const buffer) -> std::variant<ConnectionClosed, std::size_t> {
 		if (m_is_closed) {
 			return std::size_t{};
 		}
@@ -749,7 +783,7 @@ public:
 		}
 		return {};
 	}
-	auto read_available(std::span<std::byte> buffer) -> std::variant<ConnectionClosed, std::size_t> {
+	auto read_available(std::span<std::byte> const buffer) -> std::variant<ConnectionClosed, std::size_t> {
 		if (m_is_closed) {
 			return std::size_t{};
 		}
@@ -791,9 +825,10 @@ public:
 	// }
 
 	TlsSocket(std::u8string_view const server, Port const port) {
-		initialize_connection(std::u8string{server}, port);
+		initialize_connection(server, port);
 	}
 };
+#endif // IS_POSIX
 
 class Socket::Implementation {
 private:
@@ -836,8 +871,6 @@ public:
 		m_socket{select_socket(server, port)}
 	{}
 };
-
-#endif // IS_POSIX
 
 auto Socket::write(std::span<std::byte const> data) const -> void {
 	m_implementation->write(data);
