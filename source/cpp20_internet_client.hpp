@@ -39,6 +39,17 @@ SOFTWARE.
 #include <thread>
 #include <variant>
 
+#if __has_include(<source_location>)
+#	include <source_location>
+#elif __has_include(<experimental/source_location>)
+#	include <experimental/source_location>
+	namespace std {
+		using source_location = std::experimental::source_location;
+	}
+#else
+#	error "The c++20 internet client library requires <source_location> or <experimental/source_location>."
+#endif
+
 // Debugging
 // #include <iostream>
 
@@ -69,7 +80,7 @@ enum class Protocol : Port {
 	but are utilities that are used within the library.
 */
 namespace utils {
-	
+
 /*
 	This is a concept for IsAnyOf<T, U, V, W, ...> where T is equal to any of U, V, W, ...
 */
@@ -95,19 +106,18 @@ constexpr auto select_on_type(U&& first_item, V&& ... items) noexcept -> auto&& 
 	if constexpr (std::is_same_v<T, U>) {
 		return std::forward<U>(first_item);
 	}
-	else {
-		return select_on_type<T>(std::forward<V>(items)...);
-	}
+	else return select_on_type<T>(std::forward<V>(items)...);
 }
 
 //---------------------------------------------------------
 
-template<typename T> requires requires (T callable) { callable(); }
-class Cleanup {
+template<typename T> requires requires(T callable) { callable(); }
+class [[nodiscard]] Cleanup {
 private:
 	T m_callable;
 	
 public:
+	[[nodiscard]] 
 	Cleanup(T&& callable) :
 		m_callable{std::forward<T>(callable)}
 	{}
@@ -126,14 +136,38 @@ public:
 
 //---------------------------------------------------------
 
+[[noreturn]]
+inline auto unreachable(std::source_location const& source_location = std::source_location::current()) -> void {
+	// TODO: use std::format when supported
+	// throw std::logic_error{std::format("Reached an unreachable code path in file {}, in function {}, on line {}.", 
+	// 	source_location.file_name(), source_location.function_name(), source_location.line())};
+	throw std::logic_error{
+		std::string{"Reached an unreachable code path in file "} + source_location.file_name() + 
+		", in function " + source_location.function_name() + ", on line " + std::to_string(source_location.line()) + "."
+	};
+}
+
+//---------------------------------------------------------
+
 template<typename T>
-concept IsByte = sizeof(T) == 1 && std::is_trivial_v<T>;
+concept IsTrivial = std::is_trivial_v<T>;
+
+template<typename _Functor, typename ... _Arguments>
+concept IsFunctorInvocable = requires(_Arguments ... arguments) {
+	_Functor{}(arguments...);
+};
+
+template<typename T>
+concept IsByte = sizeof(T) == 1 && IsTrivial<T>;
 
 template<typename T>
 concept IsByteChar = IsAnyOf<T, char, char8_t>;
 
 template<typename T>
 concept IsByteStringView = IsAnyOf<T, std::string_view, std::u8string_view>;
+
+template<typename T>
+concept IsByteString = IsAnyOf<T, std::string, std::u8string>;
 
 //---------------------------------------------------------
 
@@ -297,9 +331,7 @@ constexpr auto find_if(_Range&& range, _Predicate&& predicate) noexcept
 	{
 		return {};
 	}
-	else {
-		return pos;
-	}
+	else return pos;
 }
 
 constexpr auto ascii_lowercase_transform = std::views::transform([](char c) { 
@@ -327,9 +359,7 @@ auto get_protocol_from_string(_StringView const protocol_string) noexcept
 		if constexpr (std::same_as<_StringView, std::u8string_view>) {
 			return u8string_to_utf8_string(protocol_string);
 		}
-		else {
-			return protocol_string;
-		}
+		else return protocol_string;
 	}();
 	if (equal_ascii_case_insensitive(ascii_string, "http")) 
 	{
@@ -446,7 +476,7 @@ auto uri_encode(_StringView const uri) -> _String {
 		}
 		else {
 			result_string += select_on_type<_StringView>("%xx"sv, u8"%xx"sv);
-			auto const result = std::to_chars(
+			std::to_chars(
 				reinterpret_cast<char*>(&result_string.back() - 1), 
 				reinterpret_cast<char*>(&result_string.back() + 1), 
 				static_cast<unsigned char>(character), 
@@ -461,17 +491,7 @@ auto uri_encode(_StringView const uri) -> _String {
 
 //---------------------------------------------------------
 
-/*
-	A minimal collection of internet related errors you should catch and handle yourself.
-*/
 namespace errors {
-
-/*
-	The URL or IP address was in an invalid format.
-	For example, the domain part could be missing, or the
-	IP address could have a number missing.
-*/
-// struct InvalidUrl {};
 
 /*
 	The connection to the server failed in some way.
@@ -492,7 +512,7 @@ public:
 		return m_is_tls_failure;
 	}
 
-	ConnectionFailed(std::string reason, bool is_tls_failure = false) :
+	ConnectionFailed(std::string reason, bool const is_tls_failure = false) :
 		m_reason(std::move(reason)),
 		m_is_tls_failure{is_tls_failure}
 	{}
@@ -502,10 +522,14 @@ public:
 
 //---------------------------------------------------------
 
+/*
+	This type is used by the Socket class to signify that 
+	the peer closed the connection during a read call.
+*/
 struct ConnectionClosed {};
 
 /*
-	A thin abstraction on top of low level socket and TLS APIs.
+	An abstraction on top of low level socket and TLS encryption APIs.
 */
 class Socket {
 public:
@@ -515,8 +539,17 @@ public:
 	auto write(std::span<std::byte const> data) const -> void;
 	/*
 		Sends a string to the peer through the socket.
+		This function takes a basic_string_view, think about 
+		whether you want it to be null terminated or not.
 	*/
-	auto write(utils::IsByteStringView auto string) const -> void {
+	auto write(utils::IsByteStringView auto const string_view) const -> void {
+		write(std::span{reinterpret_cast<std::byte const*>(string_view.data()), string_view.length()});
+	}
+	/*
+		Sends a string to the peer through the socket.
+	*/
+	auto write(utils::IsByteString auto const string) const -> void {
+		// Include null terminator
 		write(std::span{reinterpret_cast<std::byte const*>(string.data()), string.length() + 1});
 	}
 
@@ -525,15 +558,15 @@ public:
 		This function blocks until there is some data available.
 		The data that was read may be smaller than the buffer.
 		The function either returns the number of bytes that were read 
-		or a ConnectionClosed instance if the peer closed the connection. 
+		or a ConnectionClosed value if the peer closed the connection. 
 	*/
-	[[nodiscard]]
+	[[nodiscard("The result is important as it contains the size that was actually read.")]]
 	auto read(std::span<std::byte> buffer) const -> std::variant<ConnectionClosed, std::size_t>;
 	/*
 		Receives data from the socket.
 		This function blocks until there is some data available.
 		The function either returns the buffer that was read 
-		or a ConnectionClosed instance if the peer closed the connection. 
+		or a ConnectionClosed value if the peer closed the connection. 
 		The returned DataVector may be smaller than what was requested.
 	*/
 	[[nodiscard]]
@@ -552,16 +585,16 @@ public:
 		Reads any available data from the socket into a buffer.
 		This function is nonblocking, and may return std::size_t{} if 
 		there was no data available. The function either returns the number 
-		of bytes that were read or a ConnectionClosed instance if the peer 
+		of bytes that were read or a ConnectionClosed value if the peer 
 		closed the connection.
 	*/
-	[[nodiscard]]
+	[[nodiscard("The result is important as it contains the size that was actually read.")]]
 	auto read_available(std::span<std::byte> buffer) const -> std::variant<ConnectionClosed, std::size_t>;
 	/*
 		Reads any available data from the socket into a buffer.
 		This function is nonblocking, and may return an empty vector if 
 		there was no data available. The function either returns a utils::DataVector 
-		of the data that was read or a ConnectionClosed instance if the peer 
+		of the data that was read or a ConnectionClosed value if the peer 
 		closed the connection.
 	*/
 	[[nodiscard]]
@@ -590,9 +623,9 @@ public:
 	Socket() = delete;
 	~Socket(); // = default in .cpp
 
-	Socket(Socket&&); // = default in .cpp
-	auto operator=(Socket&&) -> Socket&; // = default in .cpp
-
+	Socket(Socket&&) noexcept; // = default in .cpp
+	auto operator=(Socket&&) noexcept -> Socket&; // = default in .cpp
+ 
 	Socket(Socket const&) = delete;
 	auto operator=(Socket const&) -> Socket& = delete;
 
@@ -622,7 +655,7 @@ struct Header;
 struct HeaderCopy {
 	std::string name, value;
 
-	inline explicit operator Header();
+	inline explicit operator Header() const;
 };
 /*
 	Represents a HTTP header whose data is not owned by this object.
@@ -632,7 +665,7 @@ struct Header {
 	std::string_view name, value;
 
 	[[nodiscard]]
-	explicit operator HeaderCopy()
+	explicit operator HeaderCopy() const
 	{
 		return HeaderCopy{
 			.name = std::string{name},
@@ -640,7 +673,7 @@ struct Header {
 		};
 	}
 };
-HeaderCopy::operator Header()
+HeaderCopy::operator Header() const
 {
 	return Header{
 		.name = std::string_view{name},
@@ -753,9 +786,7 @@ inline auto parse_status_line(std::string_view const line) -> StatusLine {
 		status_line.http_version = line.substr(0, http_version_end);
 		cursor = http_version_end + 1;
 	}
-	else {
-		return status_line;
-	}
+	else return status_line;
 
 	if (auto const status_code_end = line.find(' ', cursor); status_code_end != std::string_view::npos) 
 	{
@@ -763,14 +794,10 @@ inline auto parse_status_line(std::string_view const line) -> StatusLine {
 		{
 			status_line.status_code = static_cast<StatusCode>(*status_code);
 		}
-		else {
-			return status_line;
-		}
+		else return status_line;
 		cursor = status_code_end + 1;
 	}
-	else {
-		return status_line;
-	}
+	else return status_line;
 	
 	status_line.status_message = line.substr(cursor, line.find_last_not_of("\r\n ") + 1 - cursor);
 	return status_line;
@@ -850,14 +877,10 @@ private:
 		if (auto const result = utils::string_to_integral<std::size_t>(string, 16)) {
 			m_chunk_size_left = *result;
 		}
-		else {
-			throw std::logic_error{"Failed parsing http body chunk size. This is a bug."};
-		}
+		else throw std::logic_error{"Failed parsing http body chunk size. This is a bug."};
 	}
 
 	auto parse_chunk_body_part(std::span<std::byte const> const new_data) -> std::size_t {
-		auto const data_string = utils::data_to_string<char>(new_data);
-
 		if (m_chunk_size_left > new_data.size())
 		{
 			m_chunk_size_left -= new_data.size();
@@ -911,9 +934,7 @@ private:
 		if (m_chunk_size_left) {
 			return parse_chunk_body_part(new_data);
 		}
-		else {
-			return parse_chunk_separator_part(new_data);
-		}
+		else return parse_chunk_separator_part(new_data);
 	}
 	
 	std::size_t m_start_parse_offset;
@@ -934,9 +955,7 @@ public:
 			if (auto const cursor_offset = parse_next_part(new_data.subspan(cursor))) {
 				cursor += cursor_offset;
 			}
-			else {
-				return m_result;
-			}
+			else return m_result;
 		}
 	}
 };
@@ -965,7 +984,7 @@ private:
 	}
 	
 	[[nodiscard]]
-	auto try_extract_headers_string(std::size_t new_data_start) -> std::optional<std::string_view> {
+	auto try_extract_headers_string(std::size_t const new_data_start) -> std::optional<std::string_view> {
 		// '\n' line endings are not conformant with the HTTP standard.
 		for (std::string_view const empty_line : {"\r\n\r\n", "\n\n"})
 		{
@@ -985,7 +1004,7 @@ private:
 		return {};
 	}
 
-	auto try_parse_headers(std::size_t new_data_start) -> void {
+	auto try_parse_headers(std::size_t const new_data_start) -> void {
 		if (auto const headers_string = try_extract_headers_string(new_data_start))
 		{
 			m_result.headers_string = *headers_string;
@@ -1088,23 +1107,30 @@ private:
 					break;
 				}
 			}
-			else { // Connection closed
-				throw errors::ConnectionFailed{"The peer closed the connection unexpectedly"};
-			}			
+			else throw errors::ConnectionFailed{"The peer closed the connection unexpectedly"};
 		}
 	}
 
 public:
+	/*
+		Returns the status code from the response header.
+	*/
 	[[nodiscard]]
 	auto get_status_code() const -> StatusCode {
 		read_response();
 		return m_parsed_response->status_line.status_code;
 	}
+	/*
+		Returns the status code description from the response header.
+	*/
 	[[nodiscard]]
 	auto get_status_message() const -> std::string_view {
 		read_response();
 		return m_parsed_response->status_line.status_message;
 	}
+	/*
+		Returns the HTTP version from the response header.
+	*/
 	[[nodiscard]]
 	auto get_http_version() const -> std::string_view {
 		read_response();
@@ -1152,9 +1178,7 @@ public:
 		if (auto const pos = find_header(name)) {
 			return **pos;
 		}
-		else {
-			return {};
-		}
+		else return {};
 	}
 	/*
 		Returns a header value of the GET response by its name.
@@ -1166,9 +1190,7 @@ public:
 		if (auto const pos = find_header(name)) {
 			return (*pos)->value;
 		}
-		else {
-			return {};
-		}
+		else return {};
 	}
 	
 	/*
@@ -1226,7 +1248,8 @@ public:
 
 private:
 	GetResponse(Socket&& socket, std::u8string url) :
-		m_socket{std::move(socket)}
+		m_socket{std::move(socket)},
+		m_url{std::move(url)}
 	{}
 };
 
@@ -1326,7 +1349,7 @@ public:
 
 private:
 	friend auto get(std::u8string_view, Protocol) -> GetRequest;
-	GetRequest(std::u8string_view const url, Protocol default_protocol) :
+	GetRequest(std::u8string_view const url, Protocol const default_protocol) :
 		m_url{utils::uri_encode(url)},
 		m_split_url{utils::split_url(std::u8string_view{m_url})}
 	{
@@ -1341,7 +1364,7 @@ private:
 	url is a URL to the server or resource that the GET request targets.
 */
 [[nodiscard]] 
-inline auto get(std::u8string_view const url, Protocol default_protocol = Protocol::Http) -> GetRequest {
+inline auto get(std::u8string_view const url, Protocol const default_protocol = Protocol::Http) -> GetRequest {
 	return GetRequest{url, default_protocol};
 }
 /*
@@ -1349,7 +1372,7 @@ inline auto get(std::u8string_view const url, Protocol default_protocol = Protoc
 	url is a URL to the server or resource that the GET request targets.
 */
 [[nodiscard]] 
-inline auto get(std::string_view const url, Protocol default_protocol = Protocol::Http) -> GetRequest {
+inline auto get(std::string_view const url, Protocol const default_protocol = Protocol::Http) -> GetRequest {
 	return get(utils::utf8_string_to_u8string(url), default_protocol);
 }
 

@@ -6,3 +6,4 @@
 !*.cpp
 !CMakeLists.txt
 !*.md
+!sources

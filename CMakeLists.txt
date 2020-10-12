@@ -5,31 +5,45 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED true)
 
 #-----------------------------
+# Warnings for all targets.
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+	add_compile_options(/WX /Wall)
+else()
+	add_compile_options(
+		-Werror -Wall -Wpedantic -Wextra 
+		-Wimplicit-fallthrough=5 -Wsuggest-attribute=const 
+		-Wduplicated-branches -Wduplicated-cond 
+		-Wcast-qual -Wconversion
+		
+		-Wno-parentheses
+		-Wno-missing-field-initializers
+	)
+endif()
+
+#-----------------------------
 
 if (WIN32)
-	# Windows sockets 2
-	link_libraries(Ws2_32)
+	# Windows sockets 2 and Schannel.
+	link_libraries(Ws2_32 crypt32 Secur32)
 else()
-	# OpenSSL
+	# OpenSSL.
 	link_libraries(ssl crypto)
 endif()
 
 #-----------------------------
+# Unit testing target.
 
 file(GLOB test_sources tests/*.cpp)
 add_executable(cpp20_internet_client_test source/cpp20_internet_client.cpp ${test_sources})
 target_include_directories(cpp20_internet_client_test PUBLIC "./")
 
 #-----------------------------
+# Example target.
 
-add_executable(cpp20_internet_client source/cpp20_internet_client.cpp examples/get_request.cpp)
+add_executable(cpp20_internet_client source/cpp20_internet_client.cpp examples/get_request_simple.cpp)
 
 #-----------------------------
-# All targets
+# All targets.
 
-# Thanks to https://foonathan.net/2018/10/cmake-warnings/
-add_compile_options(
-	$<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:-Wall -Werror -pedantic-errors -Wextra>
-    $<$<CXX_COMPILER_ID:MSVC>:/WX /W4>
-)
 include_directories("source/")
