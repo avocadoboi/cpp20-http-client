@@ -25,7 +25,7 @@ endif()
 
 if (WIN32)
 	# Windows sockets 2 and Schannel.
-	link_libraries(Ws2_32 crypt32 Secur32)
+	link_libraries(Ws2_32 crypt32)
 else()
 	# OpenSSL.
 	link_libraries(ssl crypto)

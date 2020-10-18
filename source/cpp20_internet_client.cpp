@@ -26,28 +26,33 @@ SOFTWARE.
 
 //---------------------------------------------------------
 
-#include <array>
+#include <cassert>
 #include <chrono>
+#include <cstring>
 #include <system_error>
-
-// debugging
-#include <iostream>
 
 using namespace std::chrono_literals;
 
 //---------------------------------------------------------
 
 #ifdef _WIN32
+// Required by SSPI API headers for some reason.
 #	define SECURITY_WIN32
 
-// Windows socket API
+// Windows socket API.
 #	include <winsock2.h>
 #	include <ws2tcpip.h>
 
-// Windows secure channel API
+// Windows secure channel API.
 #	include <schannel.h>
-#	include <sspi.h>
-#elif __has_include(<unistd.h>) // This header must exist on platforms that conform to the POSIX specifications
+#	include <security.h>
+
+// Mingw does not define this.
+#	ifndef SECBUFFER_ALERT
+		constexpr auto SECBUFFER_ALERT = 17;
+#	endif
+
+#elif __has_include(<unistd.h>) // This header must exist on platforms that conform to the POSIX specifications.
 // The POSIX library is available on this platform.
 #	define IS_POSIX
 
@@ -72,7 +77,7 @@ using namespace std::chrono_literals;
 
 namespace internet_client {
 
-// Platform-specific utilities
+// Platform-specific utilities.
 namespace utils {
 
 auto enable_utf8_console() -> void {
@@ -499,6 +504,35 @@ public:
 	{}
 };
 
+struct SspiLibrary {
+	HMODULE dll_handle;
+
+	PSecurityFunctionTableW functions;
+	
+	SspiLibrary() :
+		dll_handle{LoadLibraryW(L"secur32.dll")} 
+	{
+		if (!dll_handle) {
+			throw std::system_error{static_cast<int>(GetLastError()), std::system_category(), "Failed to initialize the SSPI library"};
+		}
+		
+		auto const init_security_interface = reinterpret_cast<INIT_SECURITY_INTERFACE_W>(
+			reinterpret_cast<INT_PTR>(GetProcAddress(dll_handle, "InitSecurityInterfaceW"))
+		);
+
+		functions = init_security_interface();
+	}
+	~SspiLibrary() {
+		FreeLibrary(dll_handle);
+	}
+	SspiLibrary(SspiLibrary const&) = delete;
+	auto operator=(SspiLibrary const&) -> SspiLibrary& = delete;
+	SspiLibrary(SspiLibrary&&) = delete;
+	auto operator=(SspiLibrary&&) -> SspiLibrary& = delete;
+};
+
+auto const sspi_library = SspiLibrary{};
+
 [[nodiscard]]
 constexpr auto operator==(CredHandle const& first, CredHandle const& second) noexcept -> bool {
 	return first.dwLower == second.dwLower && first.dwUpper == second.dwUpper;
@@ -517,17 +551,117 @@ constexpr auto operator!=(SecBuffer const& first, SecBuffer const& second) noexc
 	return !(first == second);
 }
 
-using SecurityContextHandle = utils::UniqueHandle<CtxtHandle, decltype([](auto& h){DeleteSecurityContext(&h);})>;
-using SecurityContextBuffer = utils::UniqueHandle<
-	SecBuffer, decltype([](auto& h){
-		if (h.pvBuffer) {
-			FreeContextBuffer(h.pvBuffer);
+using SecurityContextHandle = utils::UniqueHandle<CtxtHandle, decltype([](auto& h){sspi_library.functions->DeleteSecurityContext(&h);})>;
+
+auto create_single_schannel_buffer_description(SecBuffer& buffer) -> SecBufferDesc {
+	return {
+		.ulVersion = SECBUFFER_VERSION,
+		.cBuffers = 1ul,
+		.pBuffers = &buffer,
+	};
+}
+auto create_schannel_buffers_description(std::span<SecBuffer> const buffers) -> SecBufferDesc {
+	return {
+		.ulVersion = SECBUFFER_VERSION,
+		.cBuffers = static_cast<unsigned long>(buffers.size()),
+		.pBuffers = buffers.data(),
+	};
+}
+
+/*
+	Holds either received handshake data or TLS message data.
+	The required size of the TLS handshake message buffer cannot be retrieved 
+	through any API call. See the block comment in the class.
+	After the handshake is complete, the buffer is resized because then the TLS message 
+	header, trailer and message sizes can be retrieved using QueryContextAttributesW.
+*/
+class TlsMessageReceiveBuffer {
+	/*
+		When the buffer is too small to fit the whole handshake message received from the peer, the return 
+		code from InitializeSecurityContextW is not SEC_E_INCOMPLETE_MESSAGE, but SEC_E_INVALID_TOKEN. 
+		Trying to grow the buffer after getting that return code does not work. The server closes the 
+		connection when trying to read more data afterwards. It seems that we need a fixed maximum 
+		handshake message/token size.
+
+		It is not clear exactly what this maximum size should be.
+		The only thing Microsoft's documentation says about this is 
+			"[...] the value of this parameter is a pointer to a 
+				buffer allocated with enough memory to hold the 
+				token returned by the remote computer."
+			(https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-initializesecuritycontextw)
+		The TLS 1.3 standard specification says:
+			"The record layer fragments information blocks into TLSPlaintext
+				records carrying data in chunks of 2^14 bytes or less."
+			(https://tools.ietf.org/html/rfc8446)
+		
+		Looking at a few implementations of TLS sockets using Schannel:
+		1. https://github.com/adobe/chromium/blob/master/net/socket/ssl_client_socket_win.cc
+			Uses 5 + 16*1024 + 64 = 16453 bytes.
+		2. https://github.com/curl/curl/blob/master/lib/vtls/schannel.c
+			Uses 4096 + 1024 = 5120 bytes.
+		3. https://github.com/odzhan/shells/tree/master/s6
+			Uses 32768 bytes.
+		4. https://docs.microsoft.com/en-us/windows/win32/secauthn/using-sspi-with-a-windows-sockets-client
+			Uses 12000 bytes.
+
+		ALL of these implementations use DIFFERENT maximum handshake message sizes.
+		I decided to follow the TLS specification and use 2^14 bytes for the handshake message buffer,
+		as this should be the maximum allowed size of any TLSPlaintext record block, which includes handshake messages.
+	*/
+	static constexpr auto maximum_handshake_message_size = std::size_t{1 << 14};
+
+	utils::DataVector m_buffer;
+	
+	explicit TlsMessageReceiveBuffer(std::size_t const size) :
+		m_buffer(size)
+	{}
+	
+public:
+	[[nodiscard]]
+	static auto allocate_new() -> TlsMessageReceiveBuffer {
+		return TlsMessageReceiveBuffer{maximum_handshake_message_size};
+	}
+
+	using iterator = utils::DataVector::iterator;
+	[[nodiscard]]
+	auto begin() -> iterator {
+		return m_buffer.begin();
+	}
+	[[nodiscard]]
+	auto end() -> iterator {
+		return m_buffer.end();
+	}
+
+	std::span<std::byte> extra_data;
+
+	auto grow_to_size(std::size_t const new_size) -> void {
+		assert(new_size >= m_buffer.size());
+		
+		if (!extra_data.empty()) {
+			auto const extra_data_start = extra_data.data() - m_buffer.data();
+			assert(extra_data_start > 0 && extra_data_start < static_cast<std::ptrdiff_t>(m_buffer.size()));
+			m_buffer.resize(new_size);
+			extra_data = std::span{m_buffer}.subspan(extra_data_start, extra_data.size());
 		}
-	})
->;
+		else {
+			m_buffer.resize(new_size);
+		}
+	}
+	[[nodiscard]]
+	auto get_full_buffer() -> std::span<std::byte> {
+		return m_buffer;
+	}
+
+	TlsMessageReceiveBuffer() = default;
+	~TlsMessageReceiveBuffer() = default;
+	TlsMessageReceiveBuffer(TlsMessageReceiveBuffer const&) = delete;
+	auto operator=(TlsMessageReceiveBuffer const&) -> TlsMessageReceiveBuffer& = delete;
+	TlsMessageReceiveBuffer(TlsMessageReceiveBuffer&&) noexcept = default;
+	auto operator=(TlsMessageReceiveBuffer&&) noexcept -> TlsMessageReceiveBuffer& = default;
+};
 
 struct SchannelConnectionInitializer {
-	using CredentialsHandle = utils::UniqueHandle<CredHandle, decltype([](auto& h){FreeCredentialHandle(&h);})>;
+	using CredentialsHandle = utils::UniqueHandle<CredHandle, decltype([](auto& h){sspi_library.functions->FreeCredentialHandle(&h);})>;
 
 	CredentialsHandle m_credentials = aquire_credentials_handle();
 
@@ -540,9 +674,9 @@ struct SchannelConnectionInitializer {
 		CredHandle credentials_handle;
 		TimeStamp credentials_time_limit;
 		
-		auto const security_status = AcquireCredentialsHandle(
+		auto const security_status = sspi_library.functions->AcquireCredentialsHandleW(
 			nullptr,
-			UNISP_NAME,
+			UNISP_NAME_W,
 			SECPKG_CRED_OUTBOUND,
 			nullptr,
 			&credentials_data,
@@ -562,30 +696,35 @@ struct SchannelConnectionInitializer {
 	std::wstring m_server_name;
 
 	SecurityContextHandle m_security_context;
+	TlsMessageReceiveBuffer m_receive_buffer = TlsMessageReceiveBuffer::allocate_new();
 	
-	auto query_stream_sizes() -> SecPkgContext_StreamSizes {
-		SecPkgContext_StreamSizes stream_sizes;
-		if (auto const result = QueryContextAttributesW(&m_security_context, SECPKG_ATTR_STREAM_SIZES, &stream_sizes);
-			result != SEC_E_OK) 
-		{
-			utils::throw_connection_error("Failed to query Schannel security context stream sizes", result, true);
+	/*
+		Returns a span over the total read data.
+	*/
+	auto read_response(std::size_t offset = {}) -> std::span<std::byte> {
+		auto const buffer_span = m_receive_buffer.get_full_buffer();
+		
+		if (!m_receive_buffer.extra_data.empty()) {
+			assert(offset == 0);
+			
+			std::ranges::copy_backward(m_receive_buffer.extra_data, buffer_span.begin());
+
+			auto const extra_data_size = m_receive_buffer.extra_data.size();
+			m_receive_buffer.extra_data = {};
+			return buffer_span.first(extra_data_size);
 		}
-		return stream_sizes;
+		else if (auto const read_result = m_socket->read(buffer_span.subspan(offset));
+			std::holds_alternative<ConnectionClosed>(read_result)) 
+		{
+			throw errors::ConnectionFailed{"The connection closed unexpectedly while reading handshake data.", true};
+		}
+		else return buffer_span.subspan(0, offset + std::get<std::size_t>(read_result));
 	}
-	
-	// struct SingleBufferDescription {
-	// 	SecBuffer security_buffer;
-	// 	SecBufferDesc security_buffer_description;
-
-	// 	SingleBufferDescription(std::span<std::byte> const buffer) :
-
-	// 	{}
-	// };
 
 	using HandshakeOutputBuffer = utils::UniqueHandle<
 		SecBuffer, decltype([](auto const& buffer){
 			if (buffer.pvBuffer) {
-				FreeContextBuffer(buffer.pvBuffer);
+				sspi_library.functions->FreeContextBuffer(buffer.pvBuffer);
 			}
 		})
 	>;
@@ -600,44 +739,55 @@ struct SchannelConnectionInitializer {
 		constexpr auto request_flags = ISC_REQ_SEQUENCE_DETECT | ISC_REQ_REPLAY_DETECT |
 			ISC_REQ_CONFIDENTIALITY | ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_STREAM;
 
-		auto input_security_buffer = SecBuffer{
-			.cbBuffer = static_cast<std::uint32_t>(input_buffer.size()),
-			.BufferType = SECBUFFER_TOKEN,
-			.pvBuffer = input_buffer.data(),
+		// The second input buffer is used to indicate that extra data 
+		// from the next message was at the end of the input buffer, 
+		// and should be processed in the next call. There's not actually
+		// any buffer pointer in that SecBuffer.
+		auto input_buffers = std::array{
+			SecBuffer{
+				.cbBuffer = static_cast<unsigned long>(input_buffer.size()),
+				.BufferType = SECBUFFER_TOKEN,
+				.pvBuffer = input_buffer.data(),
+			},
+			SecBuffer{},
 		};
-		auto input_security_buffer_description = SecBufferDesc{
-			.ulVersion = SECBUFFER_VERSION,
-			.cBuffers = 1ul,
-			.pBuffers = &input_security_buffer,
-		};
+		auto input_buffer_description = create_schannel_buffers_description(input_buffers);
 
-		auto output_security_buffer = HandshakeOutputBuffer{};
-		auto output_security_buffer_description = SecBufferDesc{
-			.ulVersion = SECBUFFER_VERSION,
-			.cBuffers = 1ul,
-			.pBuffers = &output_security_buffer,
+		auto output_buffers = std::array{
+			SecBuffer{.BufferType = SECBUFFER_TOKEN},
+			SecBuffer{.BufferType = SECBUFFER_ALERT},
+			SecBuffer{},
 		};
+		auto output_buffer_description = create_schannel_buffers_description(output_buffers);
 		
 		unsigned long returned_flags;
 
-		auto const return_code = InitializeSecurityContextW(
+		auto const return_code = sspi_library.functions->InitializeSecurityContextW(
 			&m_credentials.get(),
 			m_security_context ? &m_security_context : nullptr, // Null on first call, input security context handle
 			m_server_name.data(),
 			request_flags,
 			0, // Reserved
 			0, // Not used with Schannel
-			input_buffer.empty() ? nullptr : &input_security_buffer_description, // Null on first call
+			input_buffer.empty() ? nullptr : &input_buffer_description, // Null on first call
 			0, // Reserved
 			&m_security_context, // Output security context handle
-			&output_security_buffer_description,
+			&output_buffer_description,
 			&returned_flags,
 			nullptr // Don't care about expiration date right now
 		);
 
+		if (returned_flags != request_flags) {
+			utils::throw_connection_error("The schannel security context flags were not supported");
+		}
+
 		return HandshakeProcessResult{[&]{
+			if (input_buffers[1].BufferType == SECBUFFER_EXTRA) {
+				m_receive_buffer.extra_data = input_buffer.last(input_buffers[1].cbBuffer);
+			}
+			
 			if (return_code == SEC_I_COMPLETE_AND_CONTINUE || return_code == SEC_I_COMPLETE_NEEDED) {
-				CompleteAuthToken(&m_security_context, &output_security_buffer_description);
+				sspi_library.functions->CompleteAuthToken(&m_security_context, &output_buffer_description);
 
 				if (return_code == SEC_I_COMPLETE_AND_CONTINUE) {
 					return SEC_I_CONTINUE_NEEDED;
@@ -645,53 +795,15 @@ struct SchannelConnectionInitializer {
 				return SEC_E_OK;
 			}
 			return return_code;
-		}(), std::move(output_security_buffer)};
+		}(), HandshakeOutputBuffer{output_buffers[0]}};
 	}
 	auto send_handshake_message(HandshakeOutputBuffer const& message_buffer) -> void {
-		m_socket->write(std::span{static_cast<std::byte*>(message_buffer->pvBuffer), message_buffer->cbBuffer});
+		m_socket->write(std::span{
+			static_cast<std::byte const*>(message_buffer->pvBuffer), 
+			static_cast<std::size_t>(message_buffer->cbBuffer)
+		});
 	}
-	auto read_response(std::span<std::byte> const buffer, std::size_t const read_offset) -> std::span<std::byte> {
-		if (auto const read_result = m_socket->read(buffer.subspan(read_offset));
-			std::holds_alternative<ConnectionClosed>(read_result)) 
-		{
-			throw errors::ConnectionFailed{"The connection closed unexpectedly while reading handshake data.", true};
-		}
-		else return buffer.subspan(0, read_offset + std::get<std::size_t>(read_result));
-	} 
 	auto do_handshake() -> void {
-		/*
-			When the buffer for received handshake messages is too small, the return code from InitializeSecurityContextW 
-			is not SEC_E_INCOMPLETE_MESSAGE, but SEC_E_INVALID_TOKEN. Trying to grow the buffer after
-			getting that return code does not work. The server closes the connection when trying to read
-			more data afterwards. It seems that we need a fixed maximum handshake message/token size.
-
-			It is not clear exactly what this maximum size should be.
-			The only thing Microsoft's documentation says about this is 
-				"[...] the value of this parameter is a pointer to a 
-				 buffer allocated with enough memory to hold the 
-				 token returned by the remote computer."
-				(https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-initializesecuritycontextw)
-			The TLS 1.3 standard specification says:
-				"The record layer fragments information blocks into TLSPlaintext
-   				 records carrying data in chunks of 2^14 bytes or less."
-				(https://tools.ietf.org/html/rfc8446)
-			
-			Looking at a few implementations of TLS sockets using Schannel:
-			1. https://github.com/adobe/chromium/blob/master/net/socket/ssl_client_socket_win.cc
-				Uses 5 + 16*1024 + 64 = 16453 bytes.
-			2. https://github.com/curl/curl/blob/master/lib/vtls/schannel.c
-				Uses 4096 + 1024 = 5120 bytes.
-			3. https://github.com/odzhan/shells/tree/master/s6
-				Uses 32768 bytes.
-			4. https://docs.microsoft.com/en-us/windows/win32/secauthn/using-sspi-with-a-windows-sockets-client
-				Uses 12000 bytes.
-
-			ALL of these implementations use DIFFERENT maximum handshake message sizes.
-			I decided to follow the TLS specification and use 2^14 bytes for the handshake message buffer,
-			as this should be the maximum allowed size of any TLSPlaintext record block, which includes handshake messages.
-		*/
-		constexpr auto maximum_message_size = std::size_t{1 << 14};
-
 		if (auto const [return_code, output_buffer] = process_handshake_data({});
 			return_code != SEC_I_CONTINUE_NEEDED) // First call should always yield this return code.
 		{
@@ -699,15 +811,19 @@ struct SchannelConnectionInitializer {
 		}
 		else send_handshake_message(output_buffer);
 		
-		auto input_buffer = utils::DataVector(maximum_message_size);
-
-		auto read_start = std::size_t{};
+		auto offset = std::size_t{};
 		while (true) {
-			if (auto const [return_code, output_buffer] = process_handshake_data(read_response(input_buffer, read_start));
+			auto const read_span = read_response(offset);
+			if (auto const [return_code, output_buffer] = process_handshake_data(read_span);
 				return_code == SEC_I_CONTINUE_NEEDED)
 			{
-				send_handshake_message(output_buffer);
-				read_start = std::size_t{};
+				if (!output_buffer->cbBuffer) {
+					send_handshake_message(output_buffer);
+				}
+				offset = 0;
+			}
+			else if (return_code == SEC_E_INCOMPLETE_MESSAGE) {
+				offset = read_span.size();
 			}
 			else if (return_code == SEC_E_OK) {
 				return;
@@ -719,9 +835,13 @@ struct SchannelConnectionInitializer {
 	}
 
 public:
-	auto operator()() && -> SecurityContextHandle {
+	/*
+		Returns the resulting security context and a vector of any extra non-handshake data
+		that should be processed as part of the next message.
+	*/
+	auto operator()() && -> std::pair<SecurityContextHandle, TlsMessageReceiveBuffer> {
 		do_handshake();
-		return std::move(m_security_context);
+		return {std::move(m_security_context), std::move(m_receive_buffer)};
 	}
 
 	[[nodiscard]]
@@ -739,7 +859,19 @@ public:
 class TlsSocket {
 private:
 	std::unique_ptr<RawSocket> m_raw_socket;
+
 	SecurityContextHandle m_security_context;
+	
+	SecPkgContext_StreamSizes m_stream_sizes;
+
+	auto initialize_stream_sizes() -> void {
+		if (auto const result = sspi_library.functions->QueryContextAttributesW(&m_security_context, SECPKG_ATTR_STREAM_SIZES, &m_stream_sizes);
+			result != SEC_E_OK) 
+		{
+			utils::throw_connection_error("Failed to query Schannel security context stream sizes", result, true);
+		}
+		m_receive_buffer.grow_to_size(m_stream_sizes.cbHeader + m_stream_sizes.cbMaximumMessage + m_stream_sizes.cbTrailer);
+	}
 
 	auto initialize_connection(std::u8string_view const server, Port const port) -> void {
 		if (m_raw_socket) {
@@ -748,24 +880,156 @@ private:
 
 		m_raw_socket = std::make_unique<RawSocket>(server, port);
 
-		m_security_context = SchannelConnectionInitializer{m_raw_socket.get(), server}();
+		std::tie(m_security_context, m_receive_buffer) = SchannelConnectionInitializer{m_raw_socket.get(), server}();
+		initialize_stream_sizes();
+	}
+
+	auto encrypt_message(std::span<std::byte const> const data) -> utils::DataVector {
+		// https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-encryptmessage
+
+		auto full_buffer = utils::DataVector(m_stream_sizes.cbHeader + data.size() + m_stream_sizes.cbTrailer);
+		std::ranges::copy(data, full_buffer.begin() + m_stream_sizes.cbHeader);
+		
+		auto buffers = std::array{
+			SecBuffer{
+				.cbBuffer = m_stream_sizes.cbHeader,
+				.BufferType = SECBUFFER_STREAM_HEADER,
+				.pvBuffer = full_buffer.data(),
+			},
+			SecBuffer{
+				.cbBuffer = static_cast<unsigned long>(data.size()),
+				.BufferType = SECBUFFER_DATA,
+				.pvBuffer = full_buffer.data() + m_stream_sizes.cbHeader,
+			},
+			SecBuffer{
+				.cbBuffer = m_stream_sizes.cbTrailer,
+				.BufferType = SECBUFFER_STREAM_TRAILER,
+				.pvBuffer = full_buffer.data() + m_stream_sizes.cbHeader + data.size(),
+			},
+			// Empty buffer that must be supplied at the end.
+			SecBuffer{},
+		};
+
+		auto buffers_description = create_schannel_buffers_description(buffers);
+
+		if (auto const result = sspi_library.functions->EncryptMessage(&m_security_context, 0, &buffers_description, 0);
+			result != SEC_E_OK) 
+		{
+			utils::throw_connection_error("Failed to encrypt TLS message", result, true);
+		}
+
+		return full_buffer;
 	}
 
 public:
-	auto write(std::span<std::byte const> const /*data*/) -> void {
+	auto write(std::span<std::byte const> data) -> void {
+		while (!data.empty()) {
+			auto const message_length = std::min(data.size(), static_cast<std::size_t>(m_stream_sizes.cbMaximumMessage));
+
+			auto const output_buffer = encrypt_message(data.first(message_length));
+			m_raw_socket->write(output_buffer);
+
+			data = data.subspan(message_length);
+		}
 	}
 
+private:
+	TlsMessageReceiveBuffer m_receive_buffer;
+	// This is the part of the message buffer that contains the 
+	// rest of the decrypted message data that has not been read yet.
+	std::span<std::byte const> m_decrypted_message_left;
+
+	// Returns false if the encrypted message was incomplete
 	[[nodiscard]]
-	auto read(std::span<std::byte> const /*buffer*/, bool const /* is_nonblocking */ = false) 
+	auto decrypt_message(std::span<std::byte> const message) -> bool {
+		// https://docs.microsoft.com/en-us/windows/win32/secauthn/stream-contexts
+		auto buffers = std::array{
+			SecBuffer{ // This will hold the message header afterwards
+				.cbBuffer = static_cast<unsigned long>(message.size()),
+				.BufferType = SECBUFFER_DATA,
+				.pvBuffer = message.data(),
+			},
+			SecBuffer{}, // Will hold the decrypted data
+			SecBuffer{}, // Will hold the message trailer
+			SecBuffer{}, // May hold extra undecrypted data (from the next message)
+		};
+		auto message_buffer_description = create_schannel_buffers_description(buffers);
+
+		if (auto const status_code = sspi_library.functions->DecryptMessage(&m_security_context, &message_buffer_description, 0, nullptr);
+			status_code == SEC_E_OK)
+		{
+			m_decrypted_message_left = {static_cast<std::byte const*>(buffers[1].pvBuffer), static_cast<std::size_t>(buffers[1].cbBuffer)};
+
+			// https://docs.microsoft.com/en-us/windows/win32/secauthn/extra-buffers-returned-by-schannel
+			// Data from the next message. Always at the end.
+			if (buffers[3].BufferType == SECBUFFER_EXTRA) {
+				m_receive_buffer.extra_data = message.last(buffers[3].cbBuffer);
+			}
+			return true;
+		}
+		else if (status_code == SEC_E_INCOMPLETE_MESSAGE) {
+			return false;
+		}
+		else {
+			utils::throw_connection_error("Failed to decrypt a received TLS message", status_code, true);
+		}
+	}
+
+	auto read_encrypted_data(std::size_t const offset, bool const is_nonblocking) -> 
+		std::variant<ConnectionClosed, std::size_t>
+	{
+		auto const buffer_span = m_receive_buffer.get_full_buffer();
+		
+		if (!m_receive_buffer.extra_data.empty()) {
+			assert(offset == 0);
+			
+			std::ranges::copy_backward(m_receive_buffer.extra_data, buffer_span.begin());
+
+			auto const extra_data_size = m_receive_buffer.extra_data.size();
+			m_receive_buffer.extra_data = {};
+			return extra_data_size;
+		}
+		else {
+			return m_raw_socket->read(buffer_span.subspan(offset), is_nonblocking);
+		}
+	}
+
+public:
+	[[nodiscard]]
+	auto read(std::span<std::byte> const buffer, bool const is_nonblocking = false) 
 		-> std::variant<ConnectionClosed, std::size_t>
 	{
-		return {};
+		if (m_decrypted_message_left.empty()) {
+			auto const receive_buffer_span = std::span{m_receive_buffer.get_full_buffer()};
+			auto read_offset = std::size_t{};
+			
+			while (true) {
+				if (auto const read_result = read_encrypted_data(read_offset, is_nonblocking);
+					std::holds_alternative<ConnectionClosed>(read_result))
+				{
+					return read_result;
+				}
+				else if (decrypt_message(receive_buffer_span.first(read_offset + std::get<std::size_t>(read_result)))
+					|| is_nonblocking)
+				{
+					break;
+				}
+				else {
+					read_offset += std::get<std::size_t>(read_result);
+				}
+			}
+		}
+		auto const size = std::min(m_decrypted_message_left.size(), buffer.size());
+		std::ranges::copy(m_decrypted_message_left.first(size), buffer.begin());
+		m_decrypted_message_left = m_decrypted_message_left.subspan(size);
+		
+		return size;
 	}
 	[[nodiscard]]
-	auto read_available(std::span<std::byte> const /* buffer */) 
+	auto read_available(std::span<std::byte> const buffer) 
 		-> std::variant<ConnectionClosed, std::size_t> 
 	{
-		return {};
+		return read(buffer, true);
 	}
 
 	TlsSocket(std::u8string_view const server, Port const port) {

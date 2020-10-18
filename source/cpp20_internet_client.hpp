@@ -25,17 +25,19 @@ SOFTWARE.
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <concepts>
 #include <fstream>
 #include <functional>
 #include <future>
+#include <iostream>
 #include <memory>
 #include <ranges>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <span>
 #include <thread>
 #include <variant>
 
@@ -49,9 +51,6 @@ SOFTWARE.
 #else
 #	error "The c++20 internet client library requires <source_location> or <experimental/source_location>."
 #endif
-
-// Debugging
-// #include <iostream>
 
 /*
 Namespaces:
@@ -127,8 +126,8 @@ public:
 		m_callable();
 	}
 
-	Cleanup(Cleanup&&) = delete;
-	auto operator=(Cleanup&&) -> Cleanup& = delete;
+	Cleanup(Cleanup&&) noexcept = delete;
+	auto operator=(Cleanup&&) noexcept -> Cleanup& = delete;
 
 	Cleanup(Cleanup const&) = delete;
 	auto operator=(Cleanup const&) -> Cleanup& = delete;
@@ -139,12 +138,11 @@ public:
 [[noreturn]]
 inline auto unreachable(std::source_location const& source_location = std::source_location::current()) -> void {
 	// TODO: use std::format when supported
-	// throw std::logic_error{std::format("Reached an unreachable code path in file {}, in function {}, on line {}.", 
-	// 	source_location.file_name(), source_location.function_name(), source_location.line())};
-	throw std::logic_error{
-		std::string{"Reached an unreachable code path in file "} + source_location.file_name() + 
-		", in function " + source_location.function_name() + ", on line " + std::to_string(source_location.line()) + "."
-	};
+	// std::cerr << std::format("Reached an unreachable code path in file {}, in function {}, on line {}.", 
+	// 	source_location.file_name(), source_location.function_name(), source_location.line());
+	std::cerr << "Reached an unreachable code path in file " << source_location.file_name() << 
+		", in function " << source_location.function_name() << ", on line " << source_location.line() << ".";
+	std::exit(1);
 }
 
 //---------------------------------------------------------
@@ -231,7 +229,7 @@ constexpr auto range_to_string_view(_Range const& range)
 	-> std::basic_string_view<_Char>
 {
 	return {
-		&*range.begin(), 
+		&*std::begin(range), 
 		static_cast<std::string_view::size_type>(std::ranges::distance(range))
 	};
 }
@@ -252,8 +250,8 @@ template<
 > 
 [[nodiscard]]
 inline auto range_to_string(_Range const& range) -> _String {
-	auto result = _String(range.size(), static_cast<_Char>(0));
-	std::ranges::copy(range, result.begin());
+	auto result = _String(range.size(), _Char{});
+	std::ranges::copy(range, std::begin(result));
 	return result;
 }
 
@@ -294,6 +292,13 @@ using DataVector = std::vector<std::byte>;
 
 //---------------------------------------------------------
 
+template<std::movable T>
+auto append_to_vector(std::vector<T>& vector, std::span<T const> const data) -> void {
+	vector.insert(vector.end(), data.begin(), data.end());
+}
+
+//---------------------------------------------------------
+
 template<std::integral T>
 auto string_to_integral(IsByteStringView auto const string, int base = 10) -> std::optional<T> {
 	auto number_result = T{};
@@ -325,7 +330,7 @@ template<
 constexpr auto find_if(_Range&& range, _Predicate&& predicate) noexcept 
 	-> std::optional<_Iterator> 
 {
-	if (auto const end = range.end(), 
+	if (auto const end = std::end(range), 
 	    	pos = std::ranges::find_if(std::forward<_Range>(range), std::forward<_Predicate>(predicate)); 
 		pos == end)
 	{
@@ -862,6 +867,13 @@ struct ParsedResponse {
 	std::string headers_string;
 	std::vector<Header> headers;
 	utils::DataVector body_data;
+
+	ParsedResponse() = default;
+	~ParsedResponse() = default;
+	ParsedResponse(ParsedResponse&&) noexcept = default;
+	auto operator=(ParsedResponse&&) noexcept -> ParsedResponse& = default;
+	ParsedResponse(ParsedResponse const&) = delete;
+	auto operator=(ParsedResponse const&) -> ParsedResponse& = delete;
 };
 
 class ChunkyBodyParser {
@@ -869,6 +881,7 @@ private:
 	static constexpr auto newline = std::string_view{"\r\n"};
 
 	utils::DataVector m_result;
+	bool m_has_returned_result = false;
 
 	std::size_t m_chunk_size_left;
 
@@ -884,11 +897,11 @@ private:
 		if (m_chunk_size_left > new_data.size())
 		{
 			m_chunk_size_left -= new_data.size();
-			m_result.insert(m_result.end(), new_data.begin(), new_data.end());
+			utils::append_to_vector(m_result, new_data);
 			return new_data.size();
 		}
 		else {
-			m_result.insert(m_result.end(), new_data.begin(), new_data.begin() + m_chunk_size_left);
+			utils::append_to_vector(m_result, new_data.first(m_chunk_size_left));
 
 			// After each chunk, there is a \r\n and then the size of the next chunk.
 			// We skip the \r\n so the next part starts at the size number.
@@ -941,8 +954,12 @@ private:
 
 public:
 	auto parse_new_data(std::span<std::byte const> const new_data) -> std::optional<utils::DataVector> {
+		if (m_has_returned_result) {
+			return {};
+		}
 		if (m_is_finished) {
-			return m_result;
+			m_has_returned_result = true;
+			return std::move(m_result);
 		}
 		
 		auto cursor = m_start_parse_offset;
@@ -955,7 +972,10 @@ public:
 			if (auto const cursor_offset = parse_next_part(new_data.subspan(cursor))) {
 				cursor += cursor_offset;
 			}
-			else return m_result;
+			else {
+				m_has_returned_result = true;
+				return std::move(m_result);
+			}
 		}
 	}
 };
@@ -965,6 +985,7 @@ private:
 	utils::DataVector m_buffer;
 
 	ParsedResponse m_result;
+	bool m_has_returned_result = false;
 
 	std::size_t m_body_start{};
 	std::size_t m_body_size{};
@@ -1043,9 +1064,13 @@ public:
 	*/
 	[[nodiscard]]
 	auto parse_new_data(std::span<std::byte const> const data) -> std::optional<ParsedResponse> {
+		if (m_has_returned_result) {
+			return {};
+		}
+		
 		auto const new_data_start = m_buffer.size();
 		
-		m_buffer.insert(m_buffer.end(), data.begin(), data.end());
+		utils::append_to_vector(m_buffer, data);
 		
 		if (m_result.headers_string.empty()) {
 			try_parse_headers(new_data_start);
@@ -1057,13 +1082,15 @@ public:
 				auto const body_parse_start = std::max(new_data_start, m_body_start) - new_data_start;
 				if (auto const body = m_chunky_body_parser->parse_new_data(data.subspan(body_parse_start))) {
 					m_result.body_data = std::move(*body);
-					return m_result;
+					m_has_returned_result = true;
+					return std::move(m_result);
 				}
 			}
 			else if (m_buffer.size() >= m_body_start + m_body_size) {
 				auto const body_begin = m_buffer.begin() + m_body_start;
 				m_result.body_data = utils::DataVector(body_begin, body_begin + m_body_size);
-				return m_result;
+				m_has_returned_result = true;
+				return std::move(m_result);
 			}
 		}
 		return {};
@@ -1099,7 +1126,7 @@ private:
 			if (auto const read_result = m_socket.read(read_buffer);
 				std::holds_alternative<std::size_t>(read_result))
 			{
-				if (auto const parse_result = response_parser.parse_new_data(
+				if (auto parse_result = response_parser.parse_new_data(
 						std::span{read_buffer.data(), std::get<std::size_t>(read_result)}
 					))
 				{
@@ -1240,8 +1267,8 @@ public:
 	GetResponse() = delete;
 	~GetResponse() = default;
 	
-	GetResponse(GetResponse&&) = default;
-	auto operator=(GetResponse&&) -> GetResponse& = default;
+	GetResponse(GetResponse&&) noexcept = default;
+	auto operator=(GetResponse&&) noexcept -> GetResponse& = default;
 
 	GetResponse(GetResponse const&) = delete;
 	auto operator=(GetResponse const&) -> GetResponse& = delete;
@@ -1341,8 +1368,8 @@ public:
 	GetRequest() = delete;
 	~GetRequest() = default;
 
-	GetRequest(GetRequest&&) = default;
-	auto operator=(GetRequest&&) -> GetRequest& = default;
+	GetRequest(GetRequest&&) noexcept = default;
+	auto operator=(GetRequest&&) noexcept -> GetRequest& = default;
 
 	GetRequest(GetRequest const&) = delete;
 	auto operator=(GetRequest const&) -> GetRequest& = delete;
