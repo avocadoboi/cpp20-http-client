@@ -51,7 +51,6 @@ using namespace std::chrono_literals;
 #	ifndef SECBUFFER_ALERT
 		constexpr auto SECBUFFER_ALERT = 17;
 #	endif
-
 #elif __has_include(<unistd.h>) // This header must exist on platforms that conform to the POSIX specifications.
 // The POSIX library is available on this platform.
 #	define IS_POSIX
@@ -504,27 +503,34 @@ public:
 	{}
 };
 
+using DllHandle = utils::UniqueHandle<HMODULE, decltype([](auto& h){FreeLibrary(h);})>;
+
 struct SspiLibrary {
-	HMODULE dll_handle;
+	DllHandle dll_handle;
 
 	PSecurityFunctionTableW functions;
 	
 	SspiLibrary() :
 		dll_handle{LoadLibraryW(L"secur32.dll")} 
 	{
-		if (!dll_handle) {
+		auto const throw_error = []{
 			throw std::system_error{static_cast<int>(GetLastError()), std::system_category(), "Failed to initialize the SSPI library"};
+		};
+		
+		if (!dll_handle) {
+			throw_error();
 		}
 		
+		// ew :)
 		auto const init_security_interface = reinterpret_cast<INIT_SECURITY_INTERFACE_W>(
-			reinterpret_cast<INT_PTR>(GetProcAddress(dll_handle, "InitSecurityInterfaceW"))
+			reinterpret_cast<INT_PTR>(GetProcAddress(dll_handle.get(), "InitSecurityInterfaceW"))
 		);
 
-		functions = init_security_interface();
+		if (!(functions = init_security_interface())) {
+			throw_error();
+		}
 	}
-	~SspiLibrary() {
-		FreeLibrary(dll_handle);
-	}
+	~SspiLibrary() = default;
 	SspiLibrary(SspiLibrary const&) = delete;
 	auto operator=(SspiLibrary const&) -> SspiLibrary& = delete;
 	SspiLibrary(SspiLibrary&&) = delete;
@@ -669,7 +675,6 @@ struct SchannelConnectionInitializer {
 	static auto aquire_credentials_handle() -> CredentialsHandle {
 		auto credentials_data = SCHANNEL_CRED{
 			.dwVersion = SCHANNEL_CRED_VERSION,
-			.grbitEnabledProtocols = SP_PROT_TLS1_CLIENT,
 		};
 		CredHandle credentials_handle;
 		TimeStamp credentials_time_limit;
@@ -701,15 +706,15 @@ struct SchannelConnectionInitializer {
 	/*
 		Returns a span over the total read data.
 	*/
-	auto read_response(std::size_t offset = {}) -> std::span<std::byte> {
+	auto read_response(std::size_t const offset = {}) -> std::span<std::byte> {
 		auto const buffer_span = m_receive_buffer.get_full_buffer();
 		
 		if (!m_receive_buffer.extra_data.empty()) {
 			assert(offset == 0);
 			
-			std::ranges::copy_backward(m_receive_buffer.extra_data, buffer_span.begin());
-
 			auto const extra_data_size = m_receive_buffer.extra_data.size();
+			std::ranges::copy_backward(m_receive_buffer.extra_data, buffer_span.begin() + extra_data_size);
+
 			m_receive_buffer.extra_data = {};
 			return buffer_span.first(extra_data_size);
 		}
@@ -718,7 +723,9 @@ struct SchannelConnectionInitializer {
 		{
 			throw errors::ConnectionFailed{"The connection closed unexpectedly while reading handshake data.", true};
 		}
-		else return buffer_span.subspan(0, offset + std::get<std::size_t>(read_result));
+		else {
+			return buffer_span.subspan(0, offset + std::get<std::size_t>(read_result));
+		}
 	}
 
 	using HandshakeOutputBuffer = utils::UniqueHandle<
@@ -810,14 +817,14 @@ struct SchannelConnectionInitializer {
 			utils::throw_connection_error("Schannel TLS handshake initialization failed", return_code, true);
 		}
 		else send_handshake_message(output_buffer);
-		
+
 		auto offset = std::size_t{};
 		while (true) {
 			auto const read_span = read_response(offset);
 			if (auto const [return_code, output_buffer] = process_handshake_data(read_span);
 				return_code == SEC_I_CONTINUE_NEEDED)
 			{
-				if (!output_buffer->cbBuffer) {
+				if (output_buffer->cbBuffer) {
 					send_handshake_message(output_buffer);
 				}
 				offset = 0;
@@ -951,7 +958,7 @@ private:
 			},
 			SecBuffer{}, // Will hold the decrypted data
 			SecBuffer{}, // Will hold the message trailer
-			SecBuffer{}, // May hold extra undecrypted data (from the next message)
+			SecBuffer{}, // May hold size of extra undecrypted data (from the next message)
 		};
 		auto message_buffer_description = create_schannel_buffers_description(buffers);
 
@@ -983,9 +990,9 @@ private:
 		if (!m_receive_buffer.extra_data.empty()) {
 			assert(offset == 0);
 			
-			std::ranges::copy_backward(m_receive_buffer.extra_data, buffer_span.begin());
-
 			auto const extra_data_size = m_receive_buffer.extra_data.size();
+			std::ranges::copy_backward(m_receive_buffer.extra_data, buffer_span.begin() + extra_data_size);
+
 			m_receive_buffer.extra_data = {};
 			return extra_data_size;
 		}
@@ -1000,7 +1007,7 @@ public:
 		-> std::variant<ConnectionClosed, std::size_t>
 	{
 		if (m_decrypted_message_left.empty()) {
-			auto const receive_buffer_span = std::span{m_receive_buffer.get_full_buffer()};
+			auto const receive_buffer_span = m_receive_buffer.get_full_buffer();
 			auto read_offset = std::size_t{};
 			
 			while (true) {
@@ -1019,6 +1026,10 @@ public:
 				}
 			}
 		}
+		if (m_decrypted_message_left.empty()) {
+			return std::size_t{};
+		}
+		
 		auto const size = std::min(m_decrypted_message_left.size(), buffer.size());
 		std::ranges::copy(m_decrypted_message_left.first(size), buffer.begin());
 		m_decrypted_message_left = m_decrypted_message_left.subspan(size);

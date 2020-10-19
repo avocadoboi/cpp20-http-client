@@ -7,12 +7,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED true)
 #-----------------------------
 # Warnings for all targets.
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-	add_compile_options(/WX /Wall)
+if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
+	add_compile_options(
+		/experimental:external
+		/external:anglebrackets
+		/external:W0 
+		/WX /Wall
+	)
 else()
 	add_compile_options(
 		-Werror -Wall -Wpedantic -Wextra 
-		-Wimplicit-fallthrough=5 -Wsuggest-attribute=const 
+		-Wimplicit-fallthrough=5 
 		-Wduplicated-branches -Wduplicated-cond 
 		-Wcast-qual -Wconversion
 		
@@ -42,6 +47,9 @@ target_include_directories(cpp20_internet_client_test PUBLIC "./")
 # Example target.
 
 add_executable(cpp20_internet_client source/cpp20_internet_client.cpp examples/get_request_simple.cpp)
+
+# find_package(fmt CONFIG REQUIRED)
+# target_link_libraries(cpp20_internet_client PRIVATE fmt::fmt-header-only)
 
 #-----------------------------
 # All targets.

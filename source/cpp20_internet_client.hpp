@@ -48,8 +48,6 @@ SOFTWARE.
 	namespace std {
 		using source_location = std::experimental::source_location;
 	}
-#else
-#	error "The c++20 internet client library requires <source_location> or <experimental/source_location>."
 #endif
 
 /*
@@ -135,6 +133,7 @@ public:
 
 //---------------------------------------------------------
 
+#ifdef __cpp_lib_source_location
 [[noreturn]]
 inline auto unreachable(std::source_location const& source_location = std::source_location::current()) -> void {
 	// TODO: use std::format when supported
@@ -144,6 +143,13 @@ inline auto unreachable(std::source_location const& source_location = std::sourc
 		", in function " << source_location.function_name() << ", on line " << source_location.line() << ".";
 	std::exit(1);
 }
+#else
+[[noreturn]]
+inline auto unreachable() -> void {
+	std::cerr << "Reached an unreachable code path, exiting.";
+	std::exit(1);
+}
+#endif
 
 //---------------------------------------------------------
 
@@ -1127,7 +1133,7 @@ private:
 				std::holds_alternative<std::size_t>(read_result))
 			{
 				if (auto parse_result = response_parser.parse_new_data(
-						std::span{read_buffer.data(), std::get<std::size_t>(read_result)}
+						std::span{read_buffer}.first(std::get<std::size_t>(read_result))
 					))
 				{
 					m_parsed_response = std::move(parse_result);
