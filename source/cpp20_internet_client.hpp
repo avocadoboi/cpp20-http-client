@@ -140,16 +140,22 @@ inline auto unreachable(std::source_location const& source_location = std::sourc
 	// std::cerr << std::format("Reached an unreachable code path in file {}, in function {}, on line {}.", 
 	// 	source_location.file_name(), source_location.function_name(), source_location.line());
 	std::cerr << "Reached an unreachable code path in file " << source_location.file_name() << 
-		", in function " << source_location.function_name() << ", on line " << source_location.line() << ".";
+		", in function " << source_location.function_name() << ", on line " << source_location.line() << ".\n";
 	std::exit(1);
 }
 #else
 [[noreturn]]
 inline auto unreachable() -> void {
-	std::cerr << "Reached an unreachable code path, exiting.";
+	std::cerr << "Reached an unreachable code path, exiting.\n";
 	std::exit(1);
 }
 #endif
+
+[[noreturn]]
+inline auto panic(std::string_view const message) -> void {
+	std::cerr << message << '\n';
+	std::exit(1);
+}
 
 //---------------------------------------------------------
 
@@ -873,13 +879,6 @@ struct ParsedResponse {
 	std::string headers_string;
 	std::vector<Header> headers;
 	utils::DataVector body_data;
-
-	ParsedResponse() = default;
-	~ParsedResponse() = default;
-	ParsedResponse(ParsedResponse&&) noexcept = default;
-	auto operator=(ParsedResponse&&) noexcept -> ParsedResponse& = default;
-	ParsedResponse(ParsedResponse const&) = delete;
-	auto operator=(ParsedResponse const&) -> ParsedResponse& = delete;
 };
 
 class ChunkyBodyParser {
@@ -896,7 +895,7 @@ private:
 		if (auto const result = utils::string_to_integral<std::size_t>(string, 16)) {
 			m_chunk_size_left = *result;
 		}
-		else throw std::logic_error{"Failed parsing http body chunk size. This is a bug."};
+		else utils::panic("Failed parsing http body chunk size. This is a bug.");
 	}
 
 	auto parse_chunk_body_part(std::span<std::byte const> const new_data) -> std::size_t {

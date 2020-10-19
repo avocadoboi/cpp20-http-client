@@ -72,9 +72,11 @@ auto do_request() -> http::GetResponse {
 		auto response = send_request(url);
 
 		// Handle possible TLS redirect
-		if (response.get_status_code() == http::StatusCode::MovedPermanently) {
+		if (response.get_status_code() == http::StatusCode::MovedPermanently||
+            response.get_status_code() == http::StatusCode::Found) 
+		{
 			if (auto const new_url = response.get_header_value("location")) {
-				std::cout << "Got status code moved permanently, redirecting to " << *new_url << "...\n\n";
+				std::cout << "Got status code moved permanently or found, redirecting to " << *new_url << "...\n\n";
 				url = *new_url;
 				continue;
 			}

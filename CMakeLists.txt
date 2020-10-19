@@ -46,7 +46,7 @@ target_include_directories(cpp20_internet_client_test PUBLIC "./")
 #-----------------------------
 # Example target.
 
-add_executable(cpp20_internet_client source/cpp20_internet_client.cpp examples/get_request_simple.cpp)
+add_executable(cpp20_internet_client source/cpp20_internet_client.cpp examples/get_request.cpp)
 
 # find_package(fmt CONFIG REQUIRED)
 # target_link_libraries(cpp20_internet_client PRIVATE fmt::fmt-header-only)
