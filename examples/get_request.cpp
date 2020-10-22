@@ -1,9 +1,5 @@
 #include <cpp20_internet_client.hpp>
 
-#include <iostream>
-#include <array>
-#include <filesystem>
-
 using namespace internet_client;
 using namespace std::string_view_literals;
 
