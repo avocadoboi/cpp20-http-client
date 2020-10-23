@@ -25,7 +25,7 @@ auto main() -> int {
             }
         }
         else {
-            std::cout << "\nBody:\n" << response.get_body_string<char>();
+            std::cout << "\nBody:\n" << response.get_body_string<char>() << '\n';
         }
         break;
     }

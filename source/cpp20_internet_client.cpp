@@ -293,7 +293,7 @@ auto throw_connection_error(
 
 #ifdef IS_POSIX
 
-[[nodiscard]]
+[[noreturn]]
 auto throw_connection_error(std::string reason, int const error_code = errno, bool const is_tls_error = false) 
 	-> void 
 {
@@ -1382,8 +1382,9 @@ public:
 					// Peer shut down the connection.
 					return ConnectionClosed{};
 				}
+				[[fallthrough]];
 			default:
-				utils::throw_connection_error("Failed to read available data from socket");
+				utils::throw_connection_error("Failed to read available data from socket", error_code);
 		}
 		utils::unreachable();
 	}
