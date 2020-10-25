@@ -1,11 +1,9 @@
 *
-!external/
-!tests/
-!source/
-!include/
-!examples/
 !*.hpp
 !*.cpp
 !CMakeLists.txt
 !*.md
 !sources
+!*/
+
+build
