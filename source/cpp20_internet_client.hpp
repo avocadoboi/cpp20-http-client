@@ -312,7 +312,7 @@ auto append_to_vector(std::vector<T>& vector, std::span<T const> const data) -> 
 //---------------------------------------------------------
 
 template<std::integral T>
-auto string_to_integral(IsByteStringView auto const string, int base = 10) -> std::optional<T> {
+auto string_to_integral(IsByteStringView auto const string, int const base = 10) -> std::optional<T> {
 	auto number_result = T{};
 	auto const char_pointer = reinterpret_cast<char const*>(string.data());
 	if (std::from_chars(char_pointer, char_pointer + string.size(), number_result, base).ec == std::errc{}) {

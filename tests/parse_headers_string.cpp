@@ -46,7 +46,7 @@ Three!! ccccccc
 Last-Modified - tomorrow at 4 am
 )"
 	);
-	CHECK(headers.size() == 0);
+	CHECK(headers.empty());
 }
 
 TEST_CASE("Trying parse_headers_string with empty string") {

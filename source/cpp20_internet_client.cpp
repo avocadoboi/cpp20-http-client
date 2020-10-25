@@ -891,6 +891,7 @@ private:
 		initialize_stream_sizes();
 	}
 
+	[[nodiscard]]
 	auto encrypt_message(std::span<std::byte const> const data) -> utils::DataVector {
 		// https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-encryptmessage
 
@@ -982,6 +983,7 @@ private:
 		}
 	}
 
+	[[nodiscard]]
 	auto read_encrypted_data(std::size_t const offset, bool const is_nonblocking) -> 
 		std::variant<ConnectionClosed, std::size_t>
 	{
