@@ -33,7 +33,7 @@ else()
 	)
 endif()
 
-target_include_directories(cpp20_internet_client PUBLIC "source/")
+target_include_directories(cpp20_internet_client PUBLIC "include/")
 
 if (WIN32)
 	# Windows sockets 2 and Schannel.
@@ -48,7 +48,7 @@ endif()
 
 file(GLOB test_sources tests/*.cpp)
 add_executable(cpp20_internet_client_test source/cpp20_internet_client.cpp ${test_sources})
-target_include_directories(cpp20_internet_client_test PRIVATE "./")
+target_include_directories(cpp20_internet_client_test PRIVATE "external/catch2/")
 target_link_libraries(cpp20_internet_client_test PRIVATE cpp20_internet_client)
 
 #-----------------------------
