@@ -1,6 +1,7 @@
 *
 !tests/
 !source/
+!include/
 !examples/
 !*.hpp
 !*.cpp
