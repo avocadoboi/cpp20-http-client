@@ -1,13 +1,15 @@
 cmake_minimum_required(VERSION 3.18.0)
 project(cpp20_internet_client VERSION 0.1.0 LANGUAGES CXX)
 
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib/)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib/)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin/)
 
 #-----------------------------
 # Library target.
 
 add_library(cpp20_internet_client STATIC source/cpp20_internet_client.cpp)
+add_library(cpp20_internet_client::cpp20_internet_client ALIAS cpp20_internet_client)
+
 target_compile_features(cpp20_internet_client PUBLIC cxx_std_20)
 set_target_properties(cpp20_internet_client PROPERTIES CXX_EXTENSIONS off)
 
@@ -37,7 +39,8 @@ if (WIN32)
 	target_link_libraries(cpp20_internet_client PRIVATE Ws2_32 crypt32)
 else()
 	# OpenSSL.
-	target_link_libraries(cpp20_internet_client PRIVATE ssl crypto)
+	find_package(OpenSSL REQUIRED)
+	target_link_libraries(cpp20_internet_client PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 endif()
 
 #-----------------------------
