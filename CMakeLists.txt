@@ -1,11 +1,6 @@
 cmake_minimum_required(VERSION 3.18.0)
 project(cpp20_internet_client VERSION 0.1.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED true)
-
-set(CXX_EXTENSIONS off)
-
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib/)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/)
 
@@ -13,6 +8,8 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/)
 # Library target.
 
 add_library(cpp20_internet_client STATIC source/cpp20_internet_client.cpp)
+target_compile_features(cpp20_internet_client PUBLIC cxx_std_20)
+set_target_properties(cpp20_internet_client PROPERTIES CXX_EXTENSIONS off)
 
 if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
 	target_compile_options(cpp20_internet_client PUBLIC
