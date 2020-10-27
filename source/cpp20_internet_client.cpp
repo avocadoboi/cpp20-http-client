@@ -1266,7 +1266,9 @@ class TlsSocket {
 		auto const host_name_c_string = utils::u8string_to_utf8_string(server).data();
 
 		// For SNI (Server Name Identification)
-		if (1 != SSL_set_tlsext_host_name(m_tls_connection.get(), host_name_c_string)) {
+		// The macro casts the string to a void* for some reason. Ew.
+		// The casts are to suppress warnings about it.
+		if (1 != SSL_set_tlsext_host_name(m_tls_connection.get(), reinterpret_cast<void*>(const_cast<char*>(host_name_c_string)))) {
 			throw_tls_error();
 		}
 		// Configure automatic hostname check
