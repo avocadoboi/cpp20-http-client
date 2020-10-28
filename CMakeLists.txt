@@ -84,7 +84,6 @@ install(
 	TARGETS cpp20_internet_client
 	EXPORT ${TARGET_EXPORT_NAME} 
 	ARCHIVE DESTINATION lib
-
 )
 	
 # During installation, a target configuration file will be exported to a *Targets.cmake file

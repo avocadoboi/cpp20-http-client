@@ -37,5 +37,53 @@ auto main() -> int {
 }
 ```
 
+## Dependencies
+The only non-native dependency is OpenSSL on UNIX operating systems. It is recommended to use a package manager like VCPKG to install the OpenSSL libraries, especially on MacOS.  
+
+## Usage
+
+The library exports the target ``Cpp20InternetClient::cpp20_internet_client``. Cpp20InternetClient is the name of the package namespace. There are several ways to include the library in a project.
+
+### Installing the library
+You can download, build and install the library like so:
+```shell
+> git clone https://github.com/avocadoboi/cpp20-internet-client.git
+> cd cpp20-internet-client
+> mkdir build
+> cmake . -B build
+> cmake --build build --target cpp20_internet_client
+> sudo cmake --install build
+```
+You may want to add some flags to the cmake commands, for example the VCPKG toolchain file or a cmake prefix path for OpenSSL on UNIX systems.
+
+To include the installed library in a CMake project, use find_package like so:
+```cmake
+find_package(Cpp20InternetClient CONFIG REQUIRED)
+target_link_libraries(target_name PRIVATE Cpp20InternetClient::cpp20_internet_client)
+```
+Where target_name is the name of the target to link the library to.
+
+### Using the library as a subproject
+You can clone the library into your own project and then use it like so:
+```cmake
+add_subdirectory(external/cpp20-internet-client)
+target_link_libraries(target_name PRIVATE Cpp20InternetClient::cpp20_internet_client)
+```
+Where target_name is the name of the target to link the library to. "external/cpp20-internet-client" is just an example of where you could put the library in your project.
+
+### Using CMake to download and include the library
+You can use the built-in FetchContent CMake module to directly fetch the repository at configure time and link to it:
+```cmake
+include(FetchContent)
+
+FetchContent_Declare(
+    Cpp20InternetClient
+    GIT_REPOSITORY https://github.com/avocadoboi/cpp20-internet-client.git
+)
+FetchContent_MakeAvailable(Cpp20InternetClient)
+
+target_link_libraries(target_name PRIVATE Cpp20InternetClient::cpp20_internet_client)
+```
+
 ## Development status
 The project is in its initial development and only a subset of the functionality has been implemented.
