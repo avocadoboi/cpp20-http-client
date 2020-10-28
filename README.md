@@ -47,12 +47,12 @@ The library exports the target ``Cpp20InternetClient::cpp20_internet_client``. C
 ### Installing the library
 You can download, build and install the library like so:
 ```shell
-> git clone https://github.com/avocadoboi/cpp20-internet-client.git
-> cd cpp20-internet-client
-> mkdir build
-> cmake . -B build
-> cmake --build build --target cpp20_internet_client
-> sudo cmake --install build
+git clone https://github.com/avocadoboi/cpp20-internet-client.git
+cd cpp20-internet-client
+mkdir build
+cmake . -B build
+cmake --build build --target cpp20_internet_client
+sudo cmake --install build
 ```
 You may want to add some flags to the cmake commands, for example the VCPKG toolchain file or a cmake prefix path for OpenSSL on UNIX systems.
 
