@@ -5,7 +5,7 @@ c++20 internet client is an HTTP/HTTPS client library written in c++20. The libr
 As of now, only gcc supports all of the c++20 features used in this library. Additionally, there are some c++20 features that are not used in the library because no compiler or standard library yet supports them. However the library will be updated over time as compilers start implementing more of c++20.
 
 
-## Aims
+## Aims and features
 * User friendly, functional design.
 * An API that is hard to misuse.
 * Library code follows c++ core guidelines.
@@ -13,7 +13,7 @@ As of now, only gcc supports all of the c++20 features used in this library. Add
 * Support for GET and POST requests, both unsecured and over TLS.
 * Support for asynchronous requests.
 * Support for Windows, Linux and MacOS.
-
+* Modern CMake integration.
 
 ## Simple "GET" request example
 Note that the fmt library is not a dependency of this library, it's just to simplify the example.
