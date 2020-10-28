@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18.0)
-project(cpp20_internet_client VERSION 0.1.0 LANGUAGES CXX)
+project(Cpp20InternetClient VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib/)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin/)
@@ -8,7 +8,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin/)
 # Library target.
 
 add_library(cpp20_internet_client STATIC source/cpp20_internet_client.cpp)
-add_library(cpp20_internet_client::cpp20_internet_client ALIAS cpp20_internet_client)
+add_library(Cpp20InternetClient::cpp20_internet_client ALIAS cpp20_internet_client)
 
 target_compile_features(cpp20_internet_client PUBLIC cxx_std_20)
 set_target_properties(cpp20_internet_client PROPERTIES CXX_EXTENSIONS off)
@@ -32,35 +32,83 @@ else()
 	)
 endif()
 
-target_include_directories(cpp20_internet_client PUBLIC "include/")
+target_include_directories(cpp20_internet_client PUBLIC 
+	# When using the library from the install tree, relative paths can be used.
+	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+	$<INSTALL_INTERFACE:include>
+)
 
 if (WIN32)
 	# Windows sockets 2 and Schannel.
 	target_link_libraries(cpp20_internet_client PRIVATE Ws2_32 crypt32)
-else()
+else ()
 	# OpenSSL.
 	find_package(OpenSSL REQUIRED)
 	target_include_directories(cpp20_internet_client PUBLIC "${OPENSSL_INCLUDE_DIR}/../")
 	target_link_libraries(cpp20_internet_client PRIVATE OpenSSL::SSL OpenSSL::Crypto)
-endif()
+endif ()
 
 #-----------------------------
-# Unit testing target.
 
-file(GLOB test_sources tests/*.cpp)
-add_executable(cpp20_internet_client_test source/cpp20_internet_client.cpp ${test_sources})
-target_include_directories(cpp20_internet_client_test PRIVATE "external/catch2/")
-target_link_libraries(cpp20_internet_client_test PRIVATE cpp20_internet_client)
+if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+	include(CTest)
+	if (BUILD_TESTING)
+		add_subdirectory(tests)
+	endif ()
+endif ()
+
+if (NOT BUILD_TESTING)
+	add_subdirectory(examples)
+endif ()
 
 #-----------------------------
-# Example targets.
+# Set up installation.
 
-add_executable(example_get_request source/cpp20_internet_client.cpp examples/get_request.cpp)
-target_link_libraries(example_get_request PRIVATE cpp20_internet_client)
+include(CMakePackageConfigHelpers)
 
-add_executable(example_get_request_simple source/cpp20_internet_client.cpp examples/get_request_simple.cpp)
-target_link_libraries(example_get_request_simple PRIVATE cpp20_internet_client)
+# Create a file that contains information about package versioning.
+write_basic_package_version_file(
+	${PROJECT_NAME}ConfigVersion.cmake
+	VERSION ${PROJECT_VERSION}
+	COMPATIBILITY AnyNewerVersion
+)
+# During installation, the version file will be installed.
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
+	DESTINATION lib/cmake/${PROJECT_NAME}) # Relative to the installation path.
 
-# Not a dependency, but for emergency debugging...
-# find_package(fmt CONFIG REQUIRED)
-# target_link_libraries(example_get_request_simple PRIVATE fmt::fmt-header-only)
+set(TARGET_EXPORT_NAME ${PROJECT_NAME}Targets)
+
+# Specifies the target(s) that will be installed, and where to install 
+# the compiled library (relative to package installation path ${CMAKE_INSTALL_PREFIX}).
+install(
+	TARGETS cpp20_internet_client
+	EXPORT ${TARGET_EXPORT_NAME} 
+	ARCHIVE DESTINATION lib
+
+)
+	
+# During installation, a target configuration file will be exported to a *Targets.cmake file
+# that is included by the *Config.cmake.in file which finds the dependencies of the library.
+install(
+	EXPORT ${TARGET_EXPORT_NAME}
+	FILE ${TARGET_EXPORT_NAME}.cmake
+	NAMESPACE ${PROJECT_NAME}::
+	DESTINATION lib/cmake/${PROJECT_NAME} # Relative to installation path
+)
+
+# This uses the *Config.cmake.in file to generate a *Config.cmake file with 
+# the variables specified by PATH_VARS inserted.
+configure_package_config_file(
+	cmake/${PROJECT_NAME}Config.cmake.in
+	${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake
+	INSTALL_DESTINATION lib/cmake/${PROJECT_NAME}
+	PATH_VARS TARGET_EXPORT_NAME
+)
+
+# Install the config file 
+install(
+	FILES "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+	DESTINATION lib/cmake/${PROJECT_NAME}
+)
+
+install(DIRECTORY include DESTINATION .)

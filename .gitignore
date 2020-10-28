@@ -4,6 +4,8 @@
 !CMakeLists.txt
 !*.md
 !sources
+!*.cmake
+!*.cmake.in
 !*/
 
 build
