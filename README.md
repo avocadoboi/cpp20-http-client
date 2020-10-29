@@ -54,7 +54,7 @@ cmake . -B build
 cmake --build build --target cpp20_internet_client
 sudo cmake --install build
 ```
-You may want to add some flags to the cmake commands, for example the VCPKG toolchain file or a cmake prefix path for OpenSSL on UNIX systems.
+You may want to add some flags to the cmake commands, for example the VCPKG toolchain file or a cmake prefix path for OpenSSL on UNIX systems. Make sure a compiler is used that supports enough of the c++20 features used in the library. For a safe bet, use the latest GCC compiler. On Windows, use for example -G"MinGW Makefiles" or -G"Ninja" instead of the (probably) default visual studio generator if you want to use GCC. Run the command prompt as administrator and remove "sudo" in the last command if you are on Windows.
 
 To include the installed library in a CMake project, use find_package like so:
 ```cmake
