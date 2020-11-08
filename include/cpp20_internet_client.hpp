@@ -536,6 +536,19 @@ public:
 	{}
 };
 
+class ResponseParsingFailed : public std::exception {
+private:
+	std::string m_reason;
+public:
+	auto what() const noexcept -> char const* override {
+		return m_reason.c_str();
+	}
+
+	ResponseParsingFailed(std::string reason) :
+		m_reason(std::move(reason))
+	{}
+};
+
 } // namespace errors
 
 //---------------------------------------------------------
@@ -790,6 +803,8 @@ struct StatusLine {
 	std::string http_version;
 	StatusCode status_code = StatusCode::Unknown;
 	std::string status_message;
+
+	auto operator==(StatusLine const&) const noexcept -> bool = default;
 };
 
 namespace algorithms {
@@ -881,7 +896,9 @@ struct ParsedResponse {
 	std::string headers_string;
 	std::vector<Header> headers; // Points into headers_string
 	utils::DataVector body_data;
+	auto operator==(ParsedResponse const&) const noexcept -> bool = default;
 };
+
 
 struct ParsedHeadersInterface {
 	constexpr virtual auto get_parsed_response() const noexcept -> ParsedResponse const& = 0;
@@ -1147,7 +1164,7 @@ private:
 		if (auto const result = utils::string_to_integral<std::size_t>(string, 16)) {
 			m_chunk_size_left = *result;
 		}
-		else utils::panic("Failed parsing http body chunk size. This is a bug.");
+		else throw errors::ResponseParsingFailed{"Failed parsing http body chunk size."};
 	}
 
 	auto parse_chunk_body_part(std::span<std::byte const> const new_data) -> std::size_t {
@@ -1313,16 +1330,18 @@ private:
 
 			auto status_line_end = m_result.headers_string.find_first_of("\r\n");
 			if (status_line_end == std::string_view::npos) {
-				status_line_end = 0; // Should really never happen
+				status_line_end = m_result.headers_string.size();
 			}
 			
 			m_result.status_line = algorithms::parse_status_line(
 				std::string_view{m_result.headers_string}.substr(0, status_line_end)
 			);
 
-			m_result.headers = algorithms::parse_headers_string(
-				std::string_view{m_result.headers_string}.substr(status_line_end)
-			);
+			if (m_result.headers_string.size() > status_line_end) {
+				m_result.headers = algorithms::parse_headers_string(
+					std::string_view{m_result.headers_string}.substr(status_line_end)
+				);
+			}
 
 			if (m_callbacks && (*m_callbacks)->handle_headers) {
 				auto progress_headers = ResponseProgressHeaders{ResponseProgressRaw{m_buffer, new_data_start}, m_result};
@@ -1378,6 +1397,38 @@ private:
 		}
 	}
 
+	auto parse_new_regular_body_data(std::size_t const new_data_start) -> void {
+		if (m_buffer.size() >= m_body_start + m_body_size) 
+		{
+			auto const body_begin = m_buffer.begin() + m_body_start;
+			m_result.body_data = utils::DataVector(body_begin, body_begin + m_body_size);
+
+			if (m_callbacks && (*m_callbacks)->handle_body_progress) {
+				auto body_progress = ResponseProgressBody{
+					ResponseProgressRaw{m_buffer, new_data_start}, 
+					m_result, 
+					m_result.body_data, 
+					m_body_size
+				};
+				(*m_callbacks)->handle_body_progress(body_progress);
+			}
+
+			finish();
+		}
+		else if (m_callbacks && (*m_callbacks)->handle_body_progress) {
+			auto body_progress = ResponseProgressBody{
+				ResponseProgressRaw{m_buffer, new_data_start}, 
+				m_result, 
+				std::span{m_buffer}.subspan(m_body_start), 
+				m_body_size
+			};
+			(*m_callbacks)->handle_body_progress(body_progress);
+			if (body_progress.raw_progress.m_is_stopped) {
+				finish();
+			}
+		}
+	}
+
 public:
 	/*
 		Parses a new packet of data from the HTTP response.
@@ -1409,34 +1460,8 @@ public:
 			if (m_chunky_body_parser) {
 				parse_new_chunky_body_data(new_data_start);
 			}
-			else if (m_buffer.size() >= m_body_start + m_body_size) 
-			{
-				auto const body_begin = m_buffer.begin() + m_body_start;
-				m_result.body_data = utils::DataVector(body_begin, body_begin + m_body_size);
-
-				if (m_callbacks && (*m_callbacks)->handle_body_progress) {
-					auto body_progress = ResponseProgressBody{
-						ResponseProgressRaw{m_buffer, new_data_start}, 
-						m_result, 
-						m_result.body_data, 
-						m_body_size
-					};
-					(*m_callbacks)->handle_body_progress(body_progress);
-				}
-
-				finish();
-			}
-			else if (m_callbacks && (*m_callbacks)->handle_body_progress) {
-				auto body_progress = ResponseProgressBody{
-					ResponseProgressRaw{m_buffer, new_data_start}, 
-					m_result, 
-					std::span{m_buffer}.subspan(m_body_start), 
-					m_body_size
-				};
-				(*m_callbacks)->handle_body_progress(body_progress);
-				if (body_progress.raw_progress.m_is_stopped) {
-					finish();
-				}
+			else {
+				parse_new_regular_body_data(new_data_start);
 			}
 		}
 		if (m_is_done) {
@@ -1516,8 +1541,8 @@ public:
 	/*
 		Adds headers to the GET request.
 	*/
-	template<IsHeader _Header>
-	auto add_headers(std::span<_Header const> const headers) && -> GetRequest&& {
+	template<IsHeader _Header, std::size_t extent = std::dynamic_extent>
+	auto add_headers(std::span<_Header const, extent> const headers) && -> GetRequest&& {
 		auto headers_string = std::string{};
 		headers_string.reserve(headers.size()*128);
 		
@@ -1531,8 +1556,7 @@ public:
 	/*
 		Adds headers to the GET request.
 	*/
-	template<IsHeader _Header>
-	auto add_headers(std::initializer_list<_Header const> const headers) && -> GetRequest&& {
+	auto add_headers(std::initializer_list<Header const> const headers) && -> GetRequest&& {
 		return std::move(*this).add_headers(std::span{headers});
 	}
 	/*
@@ -1548,8 +1572,7 @@ public:
 		Adds a single header to the GET request.
 		Equivalent to add_headers with a single Header argument.
 	*/
-	template<IsHeader _Header>
-	auto add_header(_Header const& header) && -> GetRequest&& {
+	auto add_header(Header const& header) && -> GetRequest&& {
 		return std::move(*this).add_headers(((std::string{header.name} += ": ") += header.value));
 	}
 
