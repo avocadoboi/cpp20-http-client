@@ -169,7 +169,7 @@ concept IsFunctorInvocable = requires(_Arguments ... arguments) {
 };
 
 template<typename T>
-concept IsByte = sizeof(T) == 1 && IsTrivial<T>;
+concept IsByte = sizeof(T) == 1 && IsTrivial<std::remove_reference_t<T>>;
 
 template<typename T>
 concept IsByteChar = IsAnyOf<T, char, char8_t>;
@@ -308,6 +308,45 @@ using DataVector = std::vector<std::byte>;
 template<std::movable T>
 auto append_to_vector(std::vector<T>& vector, std::span<T const> const data) -> void {
 	vector.insert(vector.end(), data.begin(), data.end());
+}
+
+//---------------------------------------------------------
+
+template<typename T>
+concept IsByteData = IsByte<T> || std::ranges::range<T> && IsByte<std::ranges::range_value_t<T>>;
+
+template<IsByteData T> 
+[[nodiscard]]
+auto size_of_byte_data(T&& data) -> std::size_t {
+	if constexpr (requires{ std::size(data); }) {
+		return std::size(data);
+	}
+	else {
+		return sizeof(data);
+	}
+}
+
+template<IsByteData _Data, std::ranges::contiguous_range _Range, IsByte _RangeValue = std::ranges::range_value_t<_Range>> 
+[[nodiscard]]
+auto copy_byte_data(_Data&& data, _Range&& range) 
+	-> std::ranges::iterator_t<_Range> 
+{
+	if constexpr (IsByte<_Data>) {
+		*std::begin(range) = *reinterpret_cast<_RangeValue*>(&data);
+		return std::begin(range) + 1;
+	}
+	else {
+		return std::ranges::copy(std::span{reinterpret_cast<_RangeValue const*>(std::data(data)), std::size(data)}, std::begin(range)).out;
+	}
+}
+
+template<IsByteData ... T>
+[[nodiscard]]
+auto concatenate_byte_data(T&& ... arguments) -> DataVector {
+	auto buffer = DataVector((size_of_byte_data(arguments) + ...));
+	auto buffer_span = std::span{buffer};
+	((buffer_span = std::span{copy_byte_data(arguments, buffer_span), buffer_span.end()}), ...);
+	return buffer;
 }
 
 //---------------------------------------------------------
@@ -933,7 +972,7 @@ struct ParsedHeadersInterface {
 	}
 
 	/*
-		Returns the headers of the GET response as a string.
+		Returns the headers of the response as a string.
 		The returned string_view shall not outlive this Response object.
 	*/
 	[[nodiscard]] 
@@ -942,7 +981,7 @@ struct ParsedHeadersInterface {
 	}
 
 	/*
-		Returns the headers of the GET response as Header objects.
+		Returns the headers of the response as Header objects.
 		The returned span shall not outlive this Response object.
 	*/
 	[[nodiscard]] 
@@ -950,7 +989,7 @@ struct ParsedHeadersInterface {
 		return get_parsed_response().headers;
 	}
 	/*
-		Returns a header of the GET response by its name.
+		Returns a header of the response by its name.
 		The returned header shall not outlive this Response object.
 	*/	
 	[[nodiscard]] 
@@ -961,7 +1000,7 @@ struct ParsedHeadersInterface {
 		else return {};
 	}
 	/*
-		Returns a header value of the GET response by its name.
+		Returns a header value of the response by its name.
 		The returned std::string_view shall not outlive this Response object.
 	*/
 	[[nodiscard]] 
@@ -1077,7 +1116,7 @@ public:
 };
 
 /*
-	Represents the response of a HTTP "GET" request.
+	Represents the response of a HTTP request.
 */
 class Response : 
 	public algorithms::ParsedHeadersInterface 
@@ -1093,7 +1132,7 @@ public:
 	}
 	
 	/*
-		Returns the body of the GET response.
+		Returns the body of the response.
 		The returned std::span shall not outlive this Response object.
 	*/
 	[[nodiscard]]
@@ -1101,7 +1140,7 @@ public:
 		return m_parsed_response.body_data;
 	}
 	/*
-		Returns the body of the GET response as a string.
+		Returns the body of the response as a string.
 		The returned std::u8string_view shall not outlive this Response object.
 	*/
 	template<utils::IsByteChar _Char>
@@ -1115,7 +1154,7 @@ public:
 	// The standard library sucks at unicode.
 	
 	/*
-		Writes the body of the GET response to a file with the name file_name.
+		Writes the body of the response to a file with the name file_name.
 	*/
 	auto write_body_to_file(std::string const& file_name) const -> void 
 	{
@@ -1511,22 +1550,52 @@ inline auto receive_response(Socket const&& socket, std::u8string&& url, Respons
 
 //---------------------------------------------------------
 
+enum class RequestMethod {
+	Connect,
+	Delete,
+	Get,
+	Head,
+	Options,
+	Patch,
+	Post,
+	Put,
+	Trace,
+};
+
+inline auto request_method_to_string(RequestMethod method) -> std::string_view {
+	// TODO: Use using enum declarations when supported by gcc.
+	// using enum RequestMethod;
+	switch (method) {
+		case RequestMethod::Connect: return "CONNECT";
+		case RequestMethod::Delete: return "DELETE";
+		case RequestMethod::Get: return "GET";
+		case RequestMethod::Head: return "HEAD";
+		case RequestMethod::Options: return "OPTIONS";
+		case RequestMethod::Patch: return "PATCH";
+		case RequestMethod::Post: return "POST";
+		case RequestMethod::Put: return "PUT";
+		case RequestMethod::Trace: return "TRACE";
+	}
+	utils::unreachable();
+}
+
 /*
-	Represents a "GET" request.
-	It is created by calling the http::get function.
+	Represents a HTTP request.
+	It is created by calling any of the HTTP verb functions (http::get, http::post, http::put ...)
 */
-class GetRequest {
+class Request {
 private:
 	std::string m_headers{"\r\n"};
+
 public:
 	/*
-		Adds headers to the GET request as a string.
+		Adds headers to the request as a string.
 		These are in the format: "NAME: [ignored whitespace] VALUE"
 		The string can be multiple lines for multiple headers.
 		Non-ASCII bytes are considered opaque data,
 		according to the HTTP specification.
 	*/
-	auto add_headers(std::string_view const headers_string) && -> GetRequest&& {
+	auto add_headers(std::string_view const headers_string) && -> Request&& {
 		if (headers_string.empty()) {
 			return std::move(*this);
 		}
@@ -1539,10 +1608,10 @@ public:
 		return std::move(*this);
 	}
 	/*
-		Adds headers to the GET request.
+		Adds headers to the request.
 	*/
 	template<IsHeader _Header, std::size_t extent = std::dynamic_extent>
-	auto add_headers(std::span<_Header const, extent> const headers) && -> GetRequest&& {
+	auto add_headers(std::span<_Header const, extent> const headers) && -> Request&& {
 		auto headers_string = std::string{};
 		headers_string.reserve(headers.size()*128);
 		
@@ -1554,48 +1623,69 @@ public:
 		return std::move(*this).add_headers(headers_string);
 	}
 	/*
-		Adds headers to the GET request.
+		Adds headers to the request.
 	*/
-	auto add_headers(std::initializer_list<Header const> const headers) && -> GetRequest&& {
+	auto add_headers(std::initializer_list<Header const> const headers) && -> Request&& {
 		return std::move(*this).add_headers(std::span{headers});
 	}
 	/*
-		Adds headers to the GET request.
+		Adds headers to the request.
 		This is a variadic template that can take any number of headers.
 	*/
 	template<IsHeader ... _Header>
-	auto add_headers(_Header&& ... p_headers) && -> GetRequest&& {
+	auto add_headers(_Header&& ... p_headers) && -> Request&& {
 		auto const headers = std::array{Header{p_headers}...};
 		return std::move(*this).add_headers(std::span{headers});
 	}
 	/*
-		Adds a single header to the GET request.
+		Adds a single header to the request.
 		Equivalent to add_headers with a single Header argument.
 	*/
-	auto add_header(Header const& header) && -> GetRequest&& {
+	auto add_header(Header const& header) && -> Request&& {
 		return std::move(*this).add_headers(((std::string{header.name} += ": ") += header.value));
 	}
 
 private:
+	utils::DataVector m_body;
+
+public:
+	template<utils::IsByte _Byte>
+	auto set_body(std::span<_Byte const> const body_data) -> void {
+		m_body.resize(body_data.size());
+		if constexpr (std::same_as<_Byte, std::byte>) {
+			std::ranges::copy(body_data, m_body);
+		}
+		else {
+			std::ranges::copy(std::span{reinterpret_cast<std::byte const*>(body_data.data()), body_data.size()}, m_body);
+		}
+	}
+	template<utils::IsByteChar _Char>
+	auto set_body(std::basic_string_view<_Char> const body_data) -> void {
+		set_body(utils::string_to_data<std::byte>(body_data));
+	}
+
+private:
+	RequestMethod m_method;
+
 	std::u8string m_url;
 	utils::SplitUrl<char8_t> m_split_url;
 
 	algorithms::ResponseCallbacks m_callbacks;
 
 public:
-	auto set_raw_progress_callback(std::function<void(ResponseProgressRaw&)> callback) && -> GetRequest&& {
+	auto set_raw_progress_callback(std::function<void(ResponseProgressRaw&)> callback) && -> Request&& {
 		m_callbacks.handle_raw_progress = std::move(callback);
 		return std::move(*this);
 	}
-	auto set_headers_callback(std::function<void(ResponseProgressHeaders&)> callback) && -> GetRequest&& {
+	auto set_headers_callback(std::function<void(ResponseProgressHeaders&)> callback) && -> Request&& {
 		m_callbacks.handle_headers = std::move(callback);
 		return std::move(*this);
 	}
-	auto set_body_progress_callback(std::function<void(ResponseProgressBody&)> callback) && -> GetRequest&& {
+	auto set_body_progress_callback(std::function<void(ResponseProgressBody&)> callback) && -> Request&& {
 		m_callbacks.handle_body_progress = std::move(callback);
 		return std::move(*this);
 	}
-	auto set_finish_callback(std::function<void(Response&)> callback) && -> GetRequest&& {
+	auto set_finish_callback(std::function<void(Response&)> callback) && -> Request&& {
 		m_callbacks.handle_finish = std::move(callback);
 		return std::move(*this);
 	}
@@ -1604,42 +1694,52 @@ private:
 	auto send_and_get_receive_socket() const -> Socket {
 		auto socket = open_socket(m_split_url.domain_name, utils::get_port(m_split_url.protocol));
 		
+		using namespace std::string_view_literals;
+		
 		// TODO: Use std::format when it has been implemented.
-		auto const request_string = (((((std::string{"GET "} += utils::u8string_to_utf8_string(m_split_url.path)) += 
-			" HTTP/1.1\r\nHost: ") += utils::u8string_to_utf8_string(m_split_url.domain_name)) += m_headers) += "\r\n");
-		socket.write(std::string_view{request_string});
+		auto const request_data = utils::concatenate_byte_data(
+			request_method_to_string(m_method),
+			' ',
+			utils::u8string_to_utf8_string(m_split_url.path),
+			" HTTP/1.1\r\nHost: "sv,
+			utils::u8string_to_utf8_string(m_split_url.domain_name),
+			m_headers,
+			"\r\n"sv,
+			m_body
+		);
+		socket.write(request_data);
 
 		return socket;
 	}
 
 public:
 	/*
-		Sends the GET request and blocks until the response has been received.
+		Sends the request and blocks until the response has been received.
 	*/
 	[[nodiscard]] 
 	auto send() && -> Response {
 		return algorithms::receive_response(send_and_get_receive_socket(), std::move(m_url), std::move(m_callbacks));
 	}
 	/*
-		Sends the GET request and returns immediately after the data has been sent.
+		Sends the request and returns immediately after the data has been sent.
 		The returned future receives the response asynchronously.
 	*/
 	auto send_async() && -> std::future<Response> {
 		return std::async(&algorithms::receive_response, send_and_get_receive_socket(), std::move(m_url), std::move(m_callbacks));
 	}
 
-	GetRequest() = delete;
-	~GetRequest() = default;
+	Request() = delete;
+	~Request() = default;
 
-	GetRequest(GetRequest&&) noexcept = default;
-	auto operator=(GetRequest&&) noexcept -> GetRequest& = default;
+	Request(Request&&) noexcept = default;
+	auto operator=(Request&&) noexcept -> Request& = default;
 
-	GetRequest(GetRequest const&) = delete;
-	auto operator=(GetRequest const&) -> GetRequest& = delete;
+	Request(Request const&) = delete;
+	auto operator=(Request const&) -> Request& = delete;
 
 private:
-	friend auto get(std::u8string_view, Protocol) -> GetRequest;
-	GetRequest(std::u8string_view const url, Protocol const default_protocol) :
+	Request(RequestMethod const method, std::u8string_view const url, Protocol const default_protocol) :
+		m_method{method},
 		m_url{utils::uri_encode(url)},
 		m_split_url{utils::split_url(std::u8string_view{m_url})}
 	{
@@ -1647,23 +1747,85 @@ private:
 			m_split_url.protocol = default_protocol;
 		}
 	}
+	friend auto get(std::u8string_view, Protocol) -> Request;
+	friend auto post(std::u8string_view, Protocol) -> Request;
+	friend auto put(std::u8string_view, Protocol) -> Request;
+	friend auto make_request(RequestMethod, std::u8string_view, Protocol) -> Request;
 };
 
 /*
 	Creates a GET request.
-	url is a URL to the server or resource that the GET request targets.
+	url is a URL to the server or resource that the request targets.
 */
 [[nodiscard]] 
-inline auto get(std::u8string_view const url, Protocol const default_protocol = Protocol::Http) -> GetRequest {
-	return GetRequest{url, default_protocol};
+inline auto get(std::u8string_view const url, Protocol const default_protocol = Protocol::Http) -> Request {
+	return Request{RequestMethod::Get, url, default_protocol};
 }
 /*
 	Creates a GET request.
-	url is a URL to the server or resource that the GET request targets.
+	url is a URL to the server or resource that the request targets.
 */
 [[nodiscard]] 
-inline auto get(std::string_view const url, Protocol const default_protocol = Protocol::Http) -> GetRequest {
+inline auto get(std::string_view const url, Protocol const default_protocol = Protocol::Http) -> Request {
 	return get(utils::utf8_string_to_u8string(url), default_protocol);
+}
+
+/*
+	Creates a POST request.
+	url is a URL to the server or resource that the request targets.
+*/
+[[nodiscard]]
+inline auto post(std::u8string_view const url, Protocol const default_protocol = Protocol::Http) -> Request {
+	return Request{RequestMethod::Post, url, default_protocol};
+}
+/*
+	Creates a POST request.
+	url is a URL to the server or resource that the request targets.
+*/
+[[nodiscard]]
+inline auto post(std::string_view const url, Protocol const default_protocol = Protocol::Http) -> Request {
+	return post(utils::utf8_string_to_u8string(url), default_protocol);
+}
+
+/*
+	Creates a PUT request.
+	url is a URL to the server or resource that the request targets.
+*/
+[[nodiscard]]
+inline auto put(std::u8string_view const url, Protocol const default_protocol = Protocol::Http) -> Request {
+	return Request{RequestMethod::Put, url, default_protocol};
+}
+/*
+	Creates a PUT request.
+	url is a URL to the server or resource that the request targets.
+*/
+[[nodiscard]]
+inline auto put(std::string_view const url, Protocol const default_protocol = Protocol::Http) -> Request {
+	return put(utils::utf8_string_to_u8string(url), default_protocol);
+}
+
+/*
+	Creates a http request.
+	Can be used to do the same things as http::get and http::post, but with more method options.
+*/
+[[nodiscard]]
+inline auto make_request(
+	RequestMethod const method, 
+	std::u8string_view const url, 
+	Protocol const default_protocol = Protocol::Http
+) -> Request 
+{
+	return Request{method, url, default_protocol};
+}
+
+[[nodiscard]]
+inline auto make_request(
+	RequestMethod const method, 
+	std::string_view const url, 
+	Protocol const default_protocol = Protocol::Http
+) -> Request 
+{
+	return make_request(method, utils::utf8_string_to_u8string(url), default_protocol);
 }
 
 } // namespace http
