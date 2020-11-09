@@ -40,7 +40,7 @@ auto main() -> int {
 
 ## Dependencies
 The only non-native dependency is OpenSSL on UNIX operating systems. It is recommended to use a package manager like VCPKG to install the OpenSSL libraries, especially on MacOS.  
-## Building and installing
+## Building and installing using CMake
 You can download, build and install the library as shown below. You only need to do it like this if you want to use the library as an installation as explained later. The information about cmake flags can be useful even if you use the library as a subproject.
 ```shell
 git clone https://github.com/avocadoboi/cpp20-internet-client.git
@@ -86,4 +86,4 @@ target_link_libraries(target_name PRIVATE Cpp20InternetClient::cpp20_internet_cl
 ```
 
 ## Development status
-The project is in its initial development and only a subset of the functionality has been implemented.
+All planned functionality has been implemented and tested. There are some improvements left that are possible and quite big things which may be seen as missing like response caching. These things can easily be extended to the library in the future if there's any need or demand for them.
