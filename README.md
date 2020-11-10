@@ -1,6 +1,6 @@
 # C++20 internet client
 
-C++20 internet client is an HTTP/HTTPS client library written in C++20. The library only consists of a single header and source file.
+C++20 internet client is an HTTP/HTTPS client library written in C++20.
 
 As of now, only GCC supports all of the C++20 features used in this library. Additionally, there are some C++20 features that are not used in the library because no compiler or standard library yet supports them. However the library will be updated over time as compilers start implementing more of C++20.
 
@@ -9,7 +9,7 @@ As of now, only GCC supports all of the C++20 features used in this library. Add
 * User friendly, functional design.
 * An API that is hard to misuse.
 * Library code follows C++ core guidelines.
-* A single module file when build systems and compilers have good support for modules.
+* A single module file when build systems and compilers have good support for modules. Until then, one source and one header file.
 * HTTP requests, both unsecured and over TLS.
 * Asynchronous requests.
 * Callbacks for inspecting and/or cancelling responses while being received.
