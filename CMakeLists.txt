@@ -45,7 +45,7 @@ else ()
 	# OpenSSL.
 	find_package(OpenSSL REQUIRED)
 	target_include_directories(cpp20_internet_client PUBLIC "${OPENSSL_INCLUDE_DIR}/../")
-	target_link_libraries(cpp20_internet_client PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+	target_link_libraries(cpp20_internet_client PRIVATE OpenSSL::SSL OpenSSL::Crypto pthread)
 endif ()
 
 #-----------------------------

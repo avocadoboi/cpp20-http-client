@@ -1,6 +1,6 @@
 #include "testing_header.hpp"
 
-auto check_status_line(http::algorithms::StatusLine const& status_line) {
+auto check_status_line(http::StatusLine const& status_line) {
     CHECK(status_line.http_version == "HTTP/1.1");
     CHECK(status_line.status_code == http::StatusCode::Forbidden);
     CHECK(status_line.status_message == "Forbidden");

@@ -344,7 +344,7 @@ using SocketHandle = utils::UniqueHandle<
 	SOCKET,
 	decltype([](auto const socket) {
 		if (shutdown(socket, SD_BOTH) == SOCKET_ERROR) {
-			utils::throw_connection_error("Failed to shut down socket connection after sending data", WSAGetLastError());
+			utils::throw_connection_error("Failed to shut down socket connection", WSAGetLastError());
 		}
 		closesocket(socket);
 	}),

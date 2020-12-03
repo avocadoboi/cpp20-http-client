@@ -14,7 +14,7 @@ auto read_url() -> std::string {
 	return url;	
 }
 
-auto send_request(std::string_view const url) -> http::GetResponse {
+auto send_request(std::string_view const url) -> http::Response {
 	return http::get(url)
 		.add_header({.name="One", .value="aaa"}) // http::Header struct.
 		.add_headers("Two: bbb") // Can be multiple lines for more than one header.
@@ -28,7 +28,7 @@ auto send_request(std::string_view const url) -> http::GetResponse {
 		}).send();
 }
 
-auto use_response(http::GetResponse const& response) -> void {
+auto use_response(http::Response const& response) -> void {
 	auto const response_headers = response.get_headers_string();
 	std::cout << "Response headers below.\n\n" << response_headers << "\n\n";
 
@@ -61,7 +61,7 @@ auto use_response(http::GetResponse const& response) -> void {
 	response.write_body_to_file(std::string{filename});
 }
 
-auto do_request() -> http::GetResponse {
+auto do_request() -> http::Response {
 	auto url = read_url();
 
 	while (true) {

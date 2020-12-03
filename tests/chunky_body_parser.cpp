@@ -40,3 +40,18 @@ TEST_CASE("Chunked http body parsing") {
 
     test_chunky_body_parser(input, expected_output);
 }
+
+TEST_CASE("Chunked http body parser, small chunks") {
+    constexpr auto input = "1\r\nH\r\n2\r\nel\r\n1\r\nl\r\n1\r\no\r\n0\r\n\r\n"sv;
+    constexpr auto expected_output = "Hello"sv;
+    test_chunky_body_parser(input, expected_output);
+}
+
+TEST_CASE("Chunked http body parser, invalid input") {
+    constexpr auto input = "hello world \r\n\r\n19\r\nåäöasdfjkl";
+    REQUIRE_THROWS_AS(test_chunky_body_parser(input, ""), errors::ResponseParsingFailed);
+}
+
+TEST_CASE("Chunked http body parser, empty input") {
+    REQUIRE_THROWS_AS(test_chunky_body_parser("", ""), errors::ResponseParsingFailed);
+}
