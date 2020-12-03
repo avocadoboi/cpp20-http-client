@@ -7,6 +7,9 @@ add_executable(example_get_request_simple get_request_simple.cpp)
 # target_include_directories(example_get_request_simple PRIVATE "../include/")
 target_link_libraries(example_get_request_simple PRIVATE cpp20_internet_client)
 
+add_executable(example_socket socket.cpp)
+target_link_libraries(example_socket PRIVATE cpp20_internet_client)
+
 # Not a dependency, but for emergency debugging...
 # find_package(fmt CONFIG REQUIRED)
 # target_link_libraries(example_get_request_simple PRIVATE fmt::fmt-header-only)

@@ -20,7 +20,7 @@ if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
 		/external:W0 
 		/WX /Wall
 	)
-else()
+else ()
 	target_compile_options(cpp20_internet_client PUBLIC
 		-Werror -Wall -Wpedantic -Wextra 
 		-Wimplicit-fallthrough=5 
@@ -30,7 +30,7 @@ else()
 		-Wno-parentheses
 		-Wno-missing-field-initializers
 	)
-endif()
+endif ()
 
 target_include_directories(cpp20_internet_client PUBLIC 
 	# When using the library from the install tree, relative paths can be used.
@@ -57,9 +57,7 @@ if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
 	endif ()
 endif ()
 
-if (NOT BUILD_TESTING)
-	add_subdirectory(examples)
-endif ()
+add_subdirectory(examples)
 
 #-----------------------------
 # Set up installation.

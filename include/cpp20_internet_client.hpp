@@ -652,11 +652,16 @@ private:
 	
 	Socket(std::u8string_view server, Port port);
 	friend auto open_socket(std::u8string_view server, Port port) -> Socket;
+	friend auto open_socket(std::string_view server, Port port) -> Socket;
 };
 
 [[nodiscard]]
 inline auto open_socket(std::u8string_view const server, Port const port) -> Socket {
 	return Socket{server, port};
+}
+[[nodiscard]]
+inline auto open_socket(std::string_view const server, Port const port) -> Socket {
+	return Socket{utils::utf8_string_to_u8string(server), port};
 }
 
 //---------------------------------------------------------
