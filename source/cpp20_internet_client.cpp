@@ -1405,13 +1405,13 @@ private:
 	SocketVariant m_socket;
 
 	[[nodiscard]]
-	static auto select_socket(std::u8string_view const server, Port const port)
+	static auto select_socket(std::u8string_view const server, Port const port, bool const is_tls_encrypted)
 		-> SocketVariant
 	{
-		if (port == utils::get_port(Protocol::Http)) {
-			return RawSocket{server, port};
+		if (port == utils::get_port(Protocol::Https) || is_tls_encrypted) {
+			return TlsSocket{server, port};
 		}
-		return TlsSocket{server, port};
+		return RawSocket{server, port};
 	}
 
 public:
@@ -1440,8 +1440,8 @@ public:
 		return std::get<TlsSocket>(m_socket).read_available(buffer);
 	}
 
-	Implementation(std::u8string_view const server, Port const port) :
-		m_socket{select_socket(server, port)}
+	Implementation(std::u8string_view const server, Port const port, bool const is_tls_encrypted) :
+		m_socket{select_socket(server, port, is_tls_encrypted)}
 	{}
 };
 
@@ -1461,8 +1461,8 @@ auto Socket::read_available(std::span<std::byte> buffer) const
 	return m_implementation->read_available(buffer);
 }
 
-Socket::Socket(std::u8string_view const server, Port const port) :
-	m_implementation{std::make_unique<Implementation>(server, port)}
+Socket::Socket(std::u8string_view const server, Port const port, bool const is_tls_encrypted) :
+	m_implementation{std::make_unique<Implementation>(server, port, is_tls_encrypted)}
 {}
 Socket::~Socket() = default;
 

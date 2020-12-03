@@ -134,6 +134,10 @@ public:
 
 //---------------------------------------------------------
 
+/*
+	This can be called when the program reaches a path that should never be reachable.
+	It prints error output and exits the program.
+*/
 #ifdef __cpp_lib_source_location
 [[noreturn]]
 inline auto unreachable(std::source_location const& source_location = std::source_location::current()) -> void {
@@ -152,6 +156,9 @@ inline auto unreachable() -> void {
 }
 #endif
 
+/*
+	Prints an error message to the error output stream and exits the program.
+*/
 [[noreturn]]
 inline auto panic(std::string_view const message) -> void {
 	std::cerr << message << '\n';
@@ -191,23 +198,15 @@ using MatchConst = std::conditional_t<std::same_as<U, U const>, T const, std::re
 //---------------------------------------------------------
 
 /*
-	Converts a std::u8string_view to a std::string_view,
-	by using the same exact bytes; there's no encoding
-	conversion here. The returned std::string_view points
-	to the same data, and is thus utf-8 encoded as well.
-	This is only meant to be used to interoperate
-	with APIs that assume regular strings to be utf-8 
-	encoded.
+	Converts a std::u8string_view to a std::string_view, by using the same exact bytes; there's no encoding
+	conversion here. The returned std::string_view points to the same data, and is thus utf-8 encoded as well.
+	This is only meant to be used to interoperate with APIs that assume regular strings to be utf-8 encoded.
 */
 [[nodiscard]] 
 inline auto u8string_to_utf8_string(std::u8string_view const u8string) noexcept 
 	-> std::string_view 
 {
 	return {
-		// I think this is ok because all we're doing is telling the 
-		// compiler to pretend the bytes are char instead of char8_t,
-		// which is the intended behavior. The encoding should still
-		// be utf-8.
 		reinterpret_cast<char const*>(u8string.data()), // TODO: replace with bit_cast when compilers have implemented it.
 		u8string.size(),
 	};
@@ -326,6 +325,9 @@ auto size_of_byte_data(T&& data) -> std::size_t {
 	}
 }
 
+/*
+	Copies any type of trivial byte-sized element(s) from data to range.
+*/
 template<IsByteData _Data, std::ranges::contiguous_range _Range, IsByte _RangeValue = std::ranges::range_value_t<_Range>> 
 [[nodiscard]]
 auto copy_byte_data(_Data&& data, _Range&& range) 
@@ -340,6 +342,11 @@ auto copy_byte_data(_Data&& data, _Range&& range)
 	}
 }
 
+/*
+	Concatenates any kind of sequence of trivial byte-sized elements like char and std::byte.
+	The arguments can be individual bytes and/or ranges of bytes.
+	Returns a utils::DataVector (std::vector<std::byte>).
+*/
 template<IsByteData ... T>
 [[nodiscard]]
 auto concatenate_byte_data(T&& ... arguments) -> DataVector {
@@ -351,6 +358,10 @@ auto concatenate_byte_data(T&& ... arguments) -> DataVector {
 
 //---------------------------------------------------------
 
+/*
+	Parses a string as an integer type in a given base.
+	For more details, see std::from_chars. This is just an abstraction layer on top of it.
+*/
 template<std::integral T>
 auto string_to_integral(IsByteStringView auto const string, int const base = 10) -> std::optional<T> {
 	auto number_result = T{};
@@ -395,10 +406,7 @@ constexpr auto ascii_lowercase_transform = std::views::transform([](char c) {
 	return static_cast<char>(std::tolower(c));
 });
 
-constexpr auto equal_ascii_case_insensitive(
-	std::string_view const lhs, std::string_view const rhs
-) noexcept -> bool 
-{
+constexpr auto equal_ascii_case_insensitive(std::string_view const lhs, std::string_view const rhs) noexcept -> bool {
 	return std::ranges::equal(lhs | ascii_lowercase_transform, rhs | ascii_lowercase_transform);
 }
 
@@ -418,8 +426,7 @@ auto get_protocol_from_string(_StringView const protocol_string) noexcept
 		}
 		else return protocol_string;
 	}();
-	if (equal_ascii_case_insensitive(ascii_string, "http")) 
-	{
+	if (equal_ascii_case_insensitive(ascii_string, "http")) {
 		return Protocol::Http;
 	}
 	else if (equal_ascii_case_insensitive(ascii_string, "https")) {
@@ -565,7 +572,7 @@ public:
 private:
 	bool m_is_tls_failure;
 public:
-	auto get_is_tls_failure() -> bool {
+	auto get_is_tls_failure() const noexcept -> bool {
 		return m_is_tls_failure;
 	}
 
@@ -704,18 +711,27 @@ private:
 	class Implementation;
 	std::unique_ptr<Implementation> m_implementation;
 	
-	Socket(std::u8string_view server, Port port);
-	friend auto open_socket(std::u8string_view server, Port port) -> Socket;
-	friend auto open_socket(std::string_view server, Port port) -> Socket;
+	Socket(std::u8string_view server, Port port, bool is_tls_encrypted);
+	friend auto open_socket(std::u8string_view, Port, bool) -> Socket;
 };
 
+/*
+	Opens a socket to a server through a port.
+	If port is 443 OR is_tls_encrypted is true, TLS encryption is used. 
+	Otherwise it is unencrypted.
+*/
 [[nodiscard]]
-inline auto open_socket(std::u8string_view const server, Port const port) -> Socket {
-	return Socket{server, port};
+inline auto open_socket(std::u8string_view const server, Port const port, bool const is_tls_encrypted = false) -> Socket {
+	return Socket{server, port, is_tls_encrypted};
 }
+/*
+	Opens a socket to a server through a port.
+	If port is 443 OR is_tls_encrypted is true, TLS encryption is used. 
+	Otherwise it is unencrypted.
+*/
 [[nodiscard]]
-inline auto open_socket(std::string_view const server, Port const port) -> Socket {
-	return Socket{utils::utf8_string_to_u8string(server), port};
+inline auto open_socket(std::string_view const server, Port const port, bool const is_tls_encrypted = false) -> Socket {
+	return open_socket(utils::utf8_string_to_u8string(server), port, is_tls_encrypted);
 }
 
 //---------------------------------------------------------
@@ -725,7 +741,7 @@ namespace http {
 struct Header;
 
 /*
-	Represents a HTTP header whose data was copied from somewhere else at some point.
+	Represents a HTTP header whose data was copied from somewhere at some point.
 	It consists of std::string objects instead of std::string_view.
 */
 struct HeaderCopy {
@@ -741,16 +757,14 @@ struct Header {
 	std::string_view name, value;
 
 	[[nodiscard]]
-	explicit operator HeaderCopy() const
-	{
+	explicit operator HeaderCopy() const {
 		return HeaderCopy{
 			.name = std::string{name},
 			.value = std::string{value},
 		};
 	}
 };
-HeaderCopy::operator Header() const
-{
+HeaderCopy::operator Header() const {
 	return Header{
 		.name = std::string_view{name},
 		.value = std::string_view{value},
@@ -882,7 +896,7 @@ inline auto parse_status_line(std::string_view const line) -> StatusLine {
 }
 
 [[nodiscard]] 
-inline auto parse_headers_string(std::string_view const headers) -> std::vector<Header>
+inline auto parse_headers_string(std::string_view const headers) -> std::vector<Header> 
 {
 	auto result = std::vector<Header>();
 
@@ -1150,8 +1164,7 @@ public:
 	*/
 	template<utils::IsByteChar _Char>
 	[[nodiscard]] 
-	auto get_body_string() const -> std::basic_string_view<_Char>
-	{
+	auto get_body_string() const -> std::basic_string_view<_Char> {
 		return utils::data_to_string<_Char>(get_body());
 	}
 
@@ -1161,8 +1174,7 @@ public:
 	/*
 		Writes the body of the response to a file with the name file_name.
 	*/
-	auto write_body_to_file(std::string const& file_name) const -> void 
-	{
+	auto write_body_to_file(std::string const& file_name) const -> void {
 		// std::string because std::ofstream does not take std::string_view.
 		auto const body = get_body();
 		auto file_stream = std::ofstream{file_name, std::ios::binary};
@@ -1761,6 +1773,7 @@ private:
 /*
 	Creates a GET request.
 	url is a URL to the server or resource that the request targets.
+	If url contains a protocol prefix, it is used. Otherwise, default_protocol is used.
 */
 [[nodiscard]] 
 inline auto get(std::u8string_view const url, Protocol const default_protocol = Protocol::Http) -> Request {
@@ -1769,6 +1782,7 @@ inline auto get(std::u8string_view const url, Protocol const default_protocol = 
 /*
 	Creates a GET request.
 	url is a URL to the server or resource that the request targets.
+	If url contains a protocol prefix, it is used. Otherwise, default_protocol is used.
 */
 [[nodiscard]] 
 inline auto get(std::string_view const url, Protocol const default_protocol = Protocol::Http) -> Request {
@@ -1778,6 +1792,7 @@ inline auto get(std::string_view const url, Protocol const default_protocol = Pr
 /*
 	Creates a POST request.
 	url is a URL to the server or resource that the request targets.
+	If url contains a protocol prefix, it is used. Otherwise, default_protocol is used.
 */
 [[nodiscard]]
 inline auto post(std::u8string_view const url, Protocol const default_protocol = Protocol::Http) -> Request {
@@ -1786,6 +1801,7 @@ inline auto post(std::u8string_view const url, Protocol const default_protocol =
 /*
 	Creates a POST request.
 	url is a URL to the server or resource that the request targets.
+	If url contains a protocol prefix, it is used. Otherwise, default_protocol is used.
 */
 [[nodiscard]]
 inline auto post(std::string_view const url, Protocol const default_protocol = Protocol::Http) -> Request {
@@ -1795,6 +1811,7 @@ inline auto post(std::string_view const url, Protocol const default_protocol = P
 /*
 	Creates a PUT request.
 	url is a URL to the server or resource that the request targets.
+	If url contains a protocol prefix, it is used. Otherwise, default_protocol is used.
 */
 [[nodiscard]]
 inline auto put(std::u8string_view const url, Protocol const default_protocol = Protocol::Http) -> Request {
@@ -1803,6 +1820,7 @@ inline auto put(std::u8string_view const url, Protocol const default_protocol = 
 /*
 	Creates a PUT request.
 	url is a URL to the server or resource that the request targets.
+	If url contains a protocol prefix, it is used. Otherwise, default_protocol is used.
 */
 [[nodiscard]]
 inline auto put(std::string_view const url, Protocol const default_protocol = Protocol::Http) -> Request {
@@ -1812,6 +1830,7 @@ inline auto put(std::string_view const url, Protocol const default_protocol = Pr
 /*
 	Creates a http request.
 	Can be used to do the same things as http::get and http::post, but with more method options.
+	If url contains a protocol prefix, it is used. Otherwise, default_protocol is used.
 */
 [[nodiscard]]
 inline auto make_request(
@@ -1823,6 +1842,11 @@ inline auto make_request(
 	return Request{method, url, default_protocol};
 }
 
+/*
+	Creates a http request.
+	Can be used to do the same things as http::get and http::post, but with more method options.
+	If url contains a protocol prefix, it is used. Otherwise, default_protocol is used.
+*/
 [[nodiscard]]
 inline auto make_request(
 	RequestMethod const method, 
