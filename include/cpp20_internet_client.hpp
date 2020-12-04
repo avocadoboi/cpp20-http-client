@@ -67,6 +67,9 @@ namespace internet_client {
 
 using Port = int;
 
+/*
+	An enumeration of the communication protocols that are supported by the library.
+*/
 enum class Protocol : Port {
 	Http = 80,
 	Https = 443,
@@ -512,9 +515,7 @@ constexpr auto extract_filename(_StringView const url)
 	return {};
 }
 
-constexpr auto get_is_allowed_uri_character(char const character) noexcept 
-	-> bool 
-{
+constexpr auto get_is_allowed_uri_character(char const character) noexcept -> bool {
 	constexpr auto other_characters = std::string_view{"%-._~:/?#[]@!$&'()*+,;="};
 	
 	return character >= '0' && character <= '9' || 
@@ -1053,9 +1054,7 @@ public:
 	{}
 };
 
-class ResponseProgressHeaders :
-	public algorithms::ParsedHeadersInterface
-{
+class ResponseProgressHeaders : public algorithms::ParsedHeadersInterface {
 public:
 	ResponseProgressRaw raw_progress;
 
@@ -1086,9 +1085,7 @@ public:
 	auto operator=(ResponseProgressHeaders&&) noexcept -> ResponseProgressHeaders& = delete;
 };
 
-class ResponseProgressBody :
-	public algorithms::ParsedHeadersInterface
-{
+class ResponseProgressBody : public algorithms::ParsedHeadersInterface {
 public:
 	ResponseProgressRaw raw_progress;
 
@@ -1137,9 +1134,7 @@ public:
 /*
 	Represents the response of a HTTP request.
 */
-class Response : 
-	public algorithms::ParsedHeadersInterface 
-{
+class Response : public algorithms::ParsedHeadersInterface {
 private:
 	algorithms::ParsedResponse m_parsed_response;
 
@@ -1837,8 +1832,7 @@ inline auto make_request(
 	RequestMethod const method, 
 	std::u8string_view const url, 
 	Protocol const default_protocol = Protocol::Http
-) -> Request 
-{
+) -> Request {
 	return Request{method, url, default_protocol};
 }
 
@@ -1852,8 +1846,7 @@ inline auto make_request(
 	RequestMethod const method, 
 	std::string_view const url, 
 	Protocol const default_protocol = Protocol::Http
-) -> Request 
-{
+) -> Request {
 	return make_request(method, utils::utf8_string_to_u8string(url), default_protocol);
 }
 

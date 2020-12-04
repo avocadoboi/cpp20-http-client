@@ -65,9 +65,9 @@ auto test_callbacks_full_input(
 	std::vector<http::Header> const& headers,
 	std::string_view const body_string
 ) -> void {
-	auto input_string = (std::string{headers_string} += header_body_separator) += body_string;
+	auto const input_string = std::string{headers_string} + header_body_separator + body_string;
 
-	auto expected_body_data = utils::string_to_data<std::byte const>(identity_body_string);
+	auto const expected_body_data = utils::string_to_data<std::byte const>(identity_body_string);
 
 	auto const expected_result = http::algorithms::ParsedResponse{
 		.status_line = test_utils::ok_status_line,
@@ -122,7 +122,7 @@ auto test_callbacks_stopping_after_head(
 	std::vector<http::Header> const& headers, 
 	std::string_view const body_string
 ) -> void {
-	auto input_string = (std::string{headers_string} += header_body_separator) += body_string;
+	auto input_string = std::string{headers_string} + header_body_separator + body_string;
 
 	auto const expected_result = http::algorithms::ParsedResponse{
 		.status_line = test_utils::ok_status_line,
