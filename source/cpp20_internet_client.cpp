@@ -88,52 +88,52 @@ auto enable_utf8_console() -> void {
 
 template<IsTrivial _Type, IsFunctorInvocable<_Type> _Deleter, _Type invalid_handle = _Type{}>
 class UniqueHandle {
-	_Type m_handle{invalid_handle};
+	_Type _handle{invalid_handle};
 
 	auto close() -> void {
-		if (m_handle != invalid_handle) {
-			_Deleter{}(m_handle);
-			m_handle = invalid_handle;
+		if (_handle != invalid_handle) {
+			_Deleter{}(_handle);
+			_handle = invalid_handle;
 		}
 	}
 public:
 	explicit operator _Type() const {
-		return m_handle;
+		return _handle;
 	}
 	auto get() const -> _Type {
-		return m_handle;
+		return _handle;
 	}
 	auto get() -> _Type& {
-		return m_handle;
+		return _handle;
 	}
 
 	auto operator->() const -> _Type const* {
-		return &m_handle;
+		return &_handle;
 	}
 	auto operator->() -> _Type* {
-		return &m_handle;
+		return &_handle;
 	}
 
 	auto operator&() const -> _Type const* {
-		return &m_handle;
+		return &_handle;
 	}
 	auto operator&() -> _Type* {
-		return &m_handle;
+		return &_handle;
 	}
 
 	explicit operator bool() const {
-		return m_handle != invalid_handle;
+		return _handle != invalid_handle;
 	}
 	auto operator!() const -> bool {
-		return m_handle == invalid_handle;
+		return _handle == invalid_handle;
 	}
 
 	explicit UniqueHandle(_Type handle) :
-		m_handle{handle}
+		_handle{handle}
 	{}
 	auto operator=(_Type handle) -> UniqueHandle& {
 		close();
-		m_handle = handle;
+		_handle = handle;
 		return *this;
 	}
 
@@ -143,13 +143,13 @@ public:
 	}
 
 	UniqueHandle(UniqueHandle&& handle) noexcept :
-		m_handle{handle.m_handle}
+		_handle{handle._handle}
 	{
-		handle.m_handle = invalid_handle;
+		handle._handle = invalid_handle;
 	}
 	auto operator=(UniqueHandle&& handle) noexcept -> UniqueHandle& {
-		m_handle = handle.m_handle;
-		handle.m_handle = invalid_handle;
+		_handle = handle._handle;
+		handle._handle = invalid_handle;
 		return *this;
 	}
 
@@ -312,7 +312,7 @@ auto throw_connection_error(std::string reason, int const error_code = errno, bo
 
 class WinSockLifetime {
 private:
-	bool m_is_moved = false;
+	bool _is_moved = false;
 
 public:
 	WinSockLifetime() {
@@ -322,17 +322,17 @@ public:
 		}
 	}
 	~WinSockLifetime() {
-		if (!m_is_moved) {
+		if (!_is_moved) {
 			WSACleanup();
 		}
 	}
 
 	WinSockLifetime(WinSockLifetime&& other) noexcept {
-		other.m_is_moved = true;
+		other._is_moved = true;
 	}
 	auto operator=(WinSockLifetime&& other) noexcept -> WinSockLifetime& {
-		other.m_is_moved = true;
-		m_is_moved = false;
+		other._is_moved = true;
+		_is_moved = false;
 		return *this;
 	}
 
@@ -353,10 +353,10 @@ using SocketHandle = utils::UniqueHandle<
 
 class RawSocket {
 private:
-	WinSockLifetime m_api_lifetime;
+	WinSockLifetime _api_lifetime;
 
 	using AddressInfo = std::unique_ptr<addrinfoW, decltype([](auto p){FreeAddrInfoW(p);})>;
-	AddressInfo m_address_info;
+	AddressInfo _address_info;
 
 	[[nodiscard]]
 	static auto get_address_info(std::u8string_view const server, Port const port) -> AddressInfo
@@ -388,7 +388,7 @@ private:
 		return AddressInfo{address_info};
 	}
 
-	SocketHandle m_handle;
+	SocketHandle _handle;
 
 	[[nodiscard]]
 	auto create_handle() const -> SocketHandle {
@@ -402,9 +402,9 @@ private:
 
 		auto socket_handle = SocketHandle{};
 		while ((socket_handle = socket(
-				m_address_info->ai_family, 
-				m_address_info->ai_socktype, 
-				m_address_info->ai_protocol
+				_address_info->ai_family, 
+				_address_info->ai_socktype, 
+				_address_info->ai_protocol
 			)).get() == INVALID_SOCKET) 
 		{
 			handle_error("Failed to create socket");
@@ -412,8 +412,8 @@ private:
 
 		while (connect(
 				socket_handle.get(), 
-				m_address_info->ai_addr, 
-				static_cast<int>(m_address_info->ai_addrlen)
+				_address_info->ai_addr, 
+				static_cast<int>(_address_info->ai_addrlen)
 			) == SOCKET_ERROR)
 		{
 			handle_error("Failed to connect socket");
@@ -422,36 +422,36 @@ private:
 		return socket_handle;
 	}
 
-	bool m_is_nonblocking = false;
+	bool _is_nonblocking = false;
 
 public:
 	auto set_is_nonblocking(bool const p_is_nonblocking) -> void {
-		if (m_is_nonblocking == p_is_nonblocking) {
+		if (_is_nonblocking == p_is_nonblocking) {
 			return;
 		}
 		auto is_nonblocking = static_cast<u_long>(p_is_nonblocking);
-		ioctlsocket(m_handle.get(), FIONBIO, &is_nonblocking);
+		ioctlsocket(_handle.get(), FIONBIO, &is_nonblocking);
 	}
 	[[nodiscard]]
 	auto get_winsock_handle() -> SOCKET {
-		return m_handle.get();
+		return _handle.get();
 	}
 
 private:
-	bool m_is_closed = false;
+	bool _is_closed = false;
 	
 	auto reconnect() -> void {
-		m_handle = create_handle();
-		m_is_closed = false;
+		_handle = create_handle();
+		_is_closed = false;
 	}
 public:
 	auto write(std::span<std::byte const> const data) -> void {
-		if (m_is_closed) {
+		if (_is_closed) {
 			reconnect();
 		}
 
 		if (::send(
-				m_handle.get(), 
+				_handle.get(), 
 				reinterpret_cast<char const*>(data.data()), 
 				static_cast<int>(data.size()), 
 				0
@@ -464,21 +464,21 @@ public:
 	auto read(std::span<std::byte> const buffer, bool const is_nonblocking = false) 
 		-> std::variant<ConnectionClosed, std::size_t>
 	{
-		if (m_is_closed) {
+		if (_is_closed) {
 			return std::size_t{};
 		}
 
 		set_is_nonblocking(is_nonblocking);
 
 		if (auto const receive_result = recv(
-				m_handle.get(), 
+				_handle.get(), 
 				reinterpret_cast<char*>(buffer.data()), 
 				static_cast<int>(buffer.size()), 
 				0
 			); receive_result >= 0)
 		{
 			if (receive_result == 0) {
-				m_is_closed = true;
+				_is_closed = true;
 				return ConnectionClosed{};
 			} 
 			return static_cast<std::size_t>(receive_result);
@@ -498,8 +498,8 @@ public:
 	}
 
 	RawSocket(std::u8string_view const server, Port const port) :
-		m_address_info{get_address_info(server, port)},
-		m_handle{create_handle()}
+		_address_info{get_address_info(server, port)},
+		_handle{create_handle()}
 	{}
 };
 
@@ -616,10 +616,10 @@ class TlsMessageReceiveBuffer {
 	*/
 	static constexpr auto maximum_handshake_message_size = std::size_t{1 << 14};
 
-	utils::DataVector m_buffer;
+	utils::DataVector _buffer;
 	
 	explicit TlsMessageReceiveBuffer(std::size_t const size) :
-		m_buffer(size)
+		_buffer(size)
 	{}
 	
 public:
@@ -631,31 +631,31 @@ public:
 	using iterator = utils::DataVector::iterator;
 	[[nodiscard]]
 	auto begin() -> iterator {
-		return m_buffer.begin();
+		return _buffer.begin();
 	}
 	[[nodiscard]]
 	auto end() -> iterator {
-		return m_buffer.end();
+		return _buffer.end();
 	}
 
 	std::span<std::byte> extra_data;
 
 	auto grow_to_size(std::size_t const new_size) -> void {
-		assert(new_size >= m_buffer.size());
+		assert(new_size >= _buffer.size());
 		
 		if (!extra_data.empty()) {
-			auto const extra_data_start = extra_data.data() - m_buffer.data();
-			assert(extra_data_start > 0 && extra_data_start < static_cast<std::ptrdiff_t>(m_buffer.size()));
-			m_buffer.resize(new_size);
-			extra_data = std::span{m_buffer}.subspan(extra_data_start, extra_data.size());
+			auto const extra_data_start = extra_data.data() - _buffer.data();
+			assert(extra_data_start > 0 && extra_data_start < static_cast<std::ptrdiff_t>(_buffer.size()));
+			_buffer.resize(new_size);
+			extra_data = std::span{_buffer}.subspan(extra_data_start, extra_data.size());
 		}
 		else {
-			m_buffer.resize(new_size);
+			_buffer.resize(new_size);
 		}
 	}
 	[[nodiscard]]
 	auto get_full_buffer() -> std::span<std::byte> {
-		return m_buffer;
+		return _buffer;
 	}
 
 	TlsMessageReceiveBuffer() = default;
@@ -669,7 +669,7 @@ public:
 struct SchannelConnectionInitializer {
 	using CredentialsHandle = utils::UniqueHandle<CredHandle, decltype([](auto& h){sspi_library.functions->FreeCredentialHandle(&h);})>;
 
-	CredentialsHandle m_credentials = aquire_credentials_handle();
+	CredentialsHandle _credentials = aquire_credentials_handle();
 
 	[[nodiscard]]
 	static auto aquire_credentials_handle() -> CredentialsHandle {
@@ -697,28 +697,28 @@ struct SchannelConnectionInitializer {
 		return CredentialsHandle{credentials_handle};
 	}
 
-	RawSocket* m_socket;
-	std::wstring m_server_name;
+	RawSocket* _socket;
+	std::wstring _server_name;
 
-	SecurityContextHandle m_security_context;
-	TlsMessageReceiveBuffer m_receive_buffer = TlsMessageReceiveBuffer::allocate_new();
+	SecurityContextHandle _security_context;
+	TlsMessageReceiveBuffer _receive_buffer = TlsMessageReceiveBuffer::allocate_new();
 	
 	/*
 		Returns a span over the total read data.
 	*/
 	auto read_response(std::size_t const offset = {}) -> std::span<std::byte> {
-		auto const buffer_span = m_receive_buffer.get_full_buffer();
+		auto const buffer_span = _receive_buffer.get_full_buffer();
 		
-		if (!m_receive_buffer.extra_data.empty()) {
+		if (!_receive_buffer.extra_data.empty()) {
 			assert(offset == 0);
 			
-			auto const extra_data_size = m_receive_buffer.extra_data.size();
-			std::ranges::copy_backward(m_receive_buffer.extra_data, buffer_span.begin() + extra_data_size);
+			auto const extra_data_size = _receive_buffer.extra_data.size();
+			std::ranges::copy_backward(_receive_buffer.extra_data, buffer_span.begin() + extra_data_size);
 
-			m_receive_buffer.extra_data = {};
+			_receive_buffer.extra_data = {};
 			return buffer_span.first(extra_data_size);
 		}
-		else if (auto const read_result = m_socket->read(buffer_span.subspan(offset));
+		else if (auto const read_result = _socket->read(buffer_span.subspan(offset));
 			std::holds_alternative<ConnectionClosed>(read_result)) 
 		{
 			throw errors::ConnectionFailed{"The connection closed unexpectedly while reading handshake data.", true};
@@ -770,15 +770,15 @@ struct SchannelConnectionInitializer {
 		unsigned long returned_flags;
 
 		auto const return_code = sspi_library.functions->InitializeSecurityContextW(
-			&m_credentials.get(),
-			m_security_context ? &m_security_context : nullptr, // Null on first call, input security context handle
-			m_server_name.data(),
+			&_credentials.get(),
+			_security_context ? &_security_context : nullptr, // Null on first call, input security context handle
+			_server_name.data(),
 			request_flags,
 			0, // Reserved
 			0, // Not used with Schannel
 			input_buffer.empty() ? nullptr : &input_buffer_description, // Null on first call
 			0, // Reserved
-			&m_security_context, // Output security context handle
+			&_security_context, // Output security context handle
 			&output_buffer_description,
 			&returned_flags,
 			nullptr // Don't care about expiration date right now
@@ -790,11 +790,11 @@ struct SchannelConnectionInitializer {
 
 		return HandshakeProcessResult{[&]{
 			if (input_buffers[1].BufferType == SECBUFFER_EXTRA) {
-				m_receive_buffer.extra_data = input_buffer.last(input_buffers[1].cbBuffer);
+				_receive_buffer.extra_data = input_buffer.last(input_buffers[1].cbBuffer);
 			}
 			
 			if (return_code == SEC_I_COMPLETE_AND_CONTINUE || return_code == SEC_I_COMPLETE_NEEDED) {
-				sspi_library.functions->CompleteAuthToken(&m_security_context, &output_buffer_description);
+				sspi_library.functions->CompleteAuthToken(&_security_context, &output_buffer_description);
 
 				if (return_code == SEC_I_COMPLETE_AND_CONTINUE) {
 					return SEC_I_CONTINUE_NEEDED;
@@ -805,7 +805,7 @@ struct SchannelConnectionInitializer {
 		}(), HandshakeOutputBuffer{output_buffers[0]}};
 	}
 	auto send_handshake_message(HandshakeOutputBuffer const& message_buffer) -> void {
-		m_socket->write(std::span{
+		_socket->write(std::span{
 			static_cast<std::byte const*>(message_buffer->pvBuffer), 
 			static_cast<std::size_t>(message_buffer->cbBuffer)
 		});
@@ -848,13 +848,13 @@ public:
 	*/
 	auto operator()() && -> std::pair<SecurityContextHandle, TlsMessageReceiveBuffer> {
 		do_handshake();
-		return {std::move(m_security_context), std::move(m_receive_buffer)};
+		return {std::move(_security_context), std::move(_receive_buffer)};
 	}
 
 	[[nodiscard]]
 	SchannelConnectionInitializer(RawSocket* socket, std::u8string_view const server) :
-		m_socket{socket},
-		m_server_name{utils::win::utf8_to_wide(server)}
+		_socket{socket},
+		_server_name{utils::win::utf8_to_wide(server)}
 	{}
 	~SchannelConnectionInitializer() = default;
 	SchannelConnectionInitializer(SchannelConnectionInitializer&&) noexcept = delete;
@@ -865,29 +865,29 @@ public:
 
 class TlsSocket {
 private:
-	std::unique_ptr<RawSocket> m_raw_socket;
+	std::unique_ptr<RawSocket> _raw_socket;
 
-	SecurityContextHandle m_security_context;
+	SecurityContextHandle _security_context;
 	
-	SecPkgContext_StreamSizes m_stream_sizes;
+	SecPkgContext_StreamSizes _stream_sizes;
 
 	auto initialize_stream_sizes() -> void {
-		if (auto const result = sspi_library.functions->QueryContextAttributesW(&m_security_context, SECPKG_ATTR_STREAM_SIZES, &m_stream_sizes);
+		if (auto const result = sspi_library.functions->QueryContextAttributesW(&_security_context, SECPKG_ATTR_STREAM_SIZES, &_stream_sizes);
 			result != SEC_E_OK) 
 		{
 			utils::throw_connection_error("Failed to query Schannel security context stream sizes", result, true);
 		}
-		m_receive_buffer.grow_to_size(m_stream_sizes.cbHeader + m_stream_sizes.cbMaximumMessage + m_stream_sizes.cbTrailer);
+		_receive_buffer.grow_to_size(_stream_sizes.cbHeader + _stream_sizes.cbMaximumMessage + _stream_sizes.cbTrailer);
 	}
 
 	auto initialize_connection(std::u8string_view const server, Port const port) -> void {
-		if (m_raw_socket) {
+		if (_raw_socket) {
 			return;
 		}
 
-		m_raw_socket = std::make_unique<RawSocket>(server, port);
+		_raw_socket = std::make_unique<RawSocket>(server, port);
 
-		std::tie(m_security_context, m_receive_buffer) = SchannelConnectionInitializer{m_raw_socket.get(), server}();
+		std::tie(_security_context, _receive_buffer) = SchannelConnectionInitializer{_raw_socket.get(), server}();
 		initialize_stream_sizes();
 	}
 
@@ -895,24 +895,24 @@ private:
 	auto encrypt_message(std::span<std::byte const> const data) -> utils::DataVector {
 		// https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-encryptmessage
 
-		auto full_buffer = utils::DataVector(m_stream_sizes.cbHeader + data.size() + m_stream_sizes.cbTrailer);
-		std::ranges::copy(data, full_buffer.begin() + m_stream_sizes.cbHeader);
+		auto full_buffer = utils::DataVector(_stream_sizes.cbHeader + data.size() + _stream_sizes.cbTrailer);
+		std::ranges::copy(data, full_buffer.begin() + _stream_sizes.cbHeader);
 		
 		auto buffers = std::array{
 			SecBuffer{
-				.cbBuffer = m_stream_sizes.cbHeader,
+				.cbBuffer = _stream_sizes.cbHeader,
 				.BufferType = SECBUFFER_STREAM_HEADER,
 				.pvBuffer = full_buffer.data(),
 			},
 			SecBuffer{
 				.cbBuffer = static_cast<unsigned long>(data.size()),
 				.BufferType = SECBUFFER_DATA,
-				.pvBuffer = full_buffer.data() + m_stream_sizes.cbHeader,
+				.pvBuffer = full_buffer.data() + _stream_sizes.cbHeader,
 			},
 			SecBuffer{
-				.cbBuffer = m_stream_sizes.cbTrailer,
+				.cbBuffer = _stream_sizes.cbTrailer,
 				.BufferType = SECBUFFER_STREAM_TRAILER,
-				.pvBuffer = full_buffer.data() + m_stream_sizes.cbHeader + data.size(),
+				.pvBuffer = full_buffer.data() + _stream_sizes.cbHeader + data.size(),
 			},
 			// Empty buffer that must be supplied at the end.
 			SecBuffer{},
@@ -920,7 +920,7 @@ private:
 
 		auto buffers_description = create_schannel_buffers_description(buffers);
 
-		if (auto const result = sspi_library.functions->EncryptMessage(&m_security_context, 0, &buffers_description, 0);
+		if (auto const result = sspi_library.functions->EncryptMessage(&_security_context, 0, &buffers_description, 0);
 			result != SEC_E_OK) 
 		{
 			utils::throw_connection_error("Failed to encrypt TLS message", result, true);
@@ -932,20 +932,20 @@ private:
 public:
 	auto write(std::span<std::byte const> data) -> void {
 		while (!data.empty()) {
-			auto const message_length = std::min(data.size(), static_cast<std::size_t>(m_stream_sizes.cbMaximumMessage));
+			auto const message_length = std::min(data.size(), static_cast<std::size_t>(_stream_sizes.cbMaximumMessage));
 
 			auto const output_buffer = encrypt_message(data.first(message_length));
-			m_raw_socket->write(output_buffer);
+			_raw_socket->write(output_buffer);
 
 			data = data.subspan(message_length);
 		}
 	}
 
 private:
-	TlsMessageReceiveBuffer m_receive_buffer;
+	TlsMessageReceiveBuffer _receive_buffer;
 	// This is the part of the message buffer that contains the 
 	// rest of the decrypted message data that has not been read yet.
-	std::span<std::byte const> m_decrypted_message_left;
+	std::span<std::byte const> _decrypted_message_left;
 
 	// Returns false if the encrypted message was incomplete
 	[[nodiscard]]
@@ -963,15 +963,15 @@ private:
 		};
 		auto message_buffer_description = create_schannel_buffers_description(buffers);
 
-		if (auto const status_code = sspi_library.functions->DecryptMessage(&m_security_context, &message_buffer_description, 0, nullptr);
+		if (auto const status_code = sspi_library.functions->DecryptMessage(&_security_context, &message_buffer_description, 0, nullptr);
 			status_code == SEC_E_OK)
 		{
-			m_decrypted_message_left = {static_cast<std::byte const*>(buffers[1].pvBuffer), static_cast<std::size_t>(buffers[1].cbBuffer)};
+			_decrypted_message_left = {static_cast<std::byte const*>(buffers[1].pvBuffer), static_cast<std::size_t>(buffers[1].cbBuffer)};
 
 			// https://docs.microsoft.com/en-us/windows/win32/secauthn/extra-buffers-returned-by-schannel
 			// Data from the next message. Always at the end.
 			if (buffers[3].BufferType == SECBUFFER_EXTRA) {
-				m_receive_buffer.extra_data = message.last(buffers[3].cbBuffer);
+				_receive_buffer.extra_data = message.last(buffers[3].cbBuffer);
 			}
 			return true;
 		}
@@ -987,19 +987,19 @@ private:
 	auto read_encrypted_data(std::size_t const offset, bool const is_nonblocking) -> 
 		std::variant<ConnectionClosed, std::size_t>
 	{
-		auto const buffer_span = m_receive_buffer.get_full_buffer();
+		auto const buffer_span = _receive_buffer.get_full_buffer();
 		
-		if (!m_receive_buffer.extra_data.empty()) {
+		if (!_receive_buffer.extra_data.empty()) {
 			assert(offset == 0);
 			
-			auto const extra_data_size = m_receive_buffer.extra_data.size();
-			std::ranges::copy_backward(m_receive_buffer.extra_data, buffer_span.begin() + extra_data_size);
+			auto const extra_data_size = _receive_buffer.extra_data.size();
+			std::ranges::copy_backward(_receive_buffer.extra_data, buffer_span.begin() + extra_data_size);
 
-			m_receive_buffer.extra_data = {};
+			_receive_buffer.extra_data = {};
 			return extra_data_size;
 		}
 		else {
-			return m_raw_socket->read(buffer_span.subspan(offset), is_nonblocking);
+			return _raw_socket->read(buffer_span.subspan(offset), is_nonblocking);
 		}
 	}
 
@@ -1008,8 +1008,8 @@ public:
 	auto read(std::span<std::byte> const buffer, bool const is_nonblocking = false) 
 		-> std::variant<ConnectionClosed, std::size_t>
 	{
-		if (m_decrypted_message_left.empty()) {
-			auto const receive_buffer_span = m_receive_buffer.get_full_buffer();
+		if (_decrypted_message_left.empty()) {
+			auto const receive_buffer_span = _receive_buffer.get_full_buffer();
 			auto read_offset = std::size_t{};
 			
 			while (true) {
@@ -1028,13 +1028,13 @@ public:
 				}
 			}
 		}
-		if (m_decrypted_message_left.empty()) {
+		if (_decrypted_message_left.empty()) {
 			return std::size_t{};
 		}
 		
-		auto const size = std::min(m_decrypted_message_left.size(), buffer.size());
-		std::ranges::copy(m_decrypted_message_left.first(size), buffer.begin());
-		m_decrypted_message_left = m_decrypted_message_left.subspan(size);
+		auto const size = std::min(_decrypted_message_left.size(), buffer.size());
+		std::ranges::copy(_decrypted_message_left.first(size), buffer.begin());
+		_decrypted_message_left = _decrypted_message_left.subspan(size);
 		
 		return size;
 	}
@@ -1070,7 +1070,7 @@ using SocketHandle = utils::UniqueHandle<
 class RawSocket {
 private:
 	using AddressInfo = std::unique_ptr<addrinfo, decltype([](auto const p){freeaddrinfo(p);})>;
-	AddressInfo m_address_info;
+	AddressInfo _address_info;
 
 	[[nodiscard]]
 	static auto get_address_info(std::u8string const server, Port const port) -> AddressInfo
@@ -1101,14 +1101,14 @@ private:
 		return AddressInfo{address_info};
 	}
 
-	SocketHandle m_handle;
+	SocketHandle _handle;
 
 	[[nodiscard]]
 	auto create_handle() const -> SocketHandle {
 		auto socket_handle = SocketHandle{::socket(
-			m_address_info->ai_family, 
-			m_address_info->ai_socktype, 
-			m_address_info->ai_protocol
+			_address_info->ai_family, 
+			_address_info->ai_socktype, 
+			_address_info->ai_protocol
 		)};
 		if (!socket_handle) {
 			utils::throw_connection_error("Failed to create socket");
@@ -1116,8 +1116,8 @@ private:
 
 		while (::connect(
 				socket_handle.get(), 
-				m_address_info->ai_addr, 
-				static_cast<int>(m_address_info->ai_addrlen)
+				_address_info->ai_addr, 
+				static_cast<int>(_address_info->ai_addrlen)
 			) == -1)
 		{
 			if (auto const error_code = errno; error_code != EINPROGRESS) {
@@ -1133,48 +1133,48 @@ private:
 		return socket_handle;
 	}
 
-	bool m_is_nonblocking = false;
+	bool _is_nonblocking = false;
 
 public:
 	auto make_nonblocking() -> void {
-		if (!m_is_nonblocking) {
-			auto const flags = fcntl(m_handle.get(), F_GETFL);
-			if (-1 == fcntl(m_handle.get(), F_SETFL, flags | O_NONBLOCK)) {
+		if (!_is_nonblocking) {
+			auto const flags = fcntl(_handle.get(), F_GETFL);
+			if (-1 == fcntl(_handle.get(), F_SETFL, flags | O_NONBLOCK)) {
 				utils::throw_connection_error("Failed to turn on nonblocking mode on socket");
 			}
-			m_is_nonblocking = true;
+			_is_nonblocking = true;
 		}
 	}
 	auto make_blocking() -> void {
-		if (m_is_nonblocking) {
-			auto const flags = fcntl(m_handle.get(), F_GETFL);
-			if (-1 == fcntl(m_handle.get(), F_SETFL, flags & ~O_NONBLOCK)) {
+		if (_is_nonblocking) {
+			auto const flags = fcntl(_handle.get(), F_GETFL);
+			if (-1 == fcntl(_handle.get(), F_SETFL, flags & ~O_NONBLOCK)) {
 				utils::throw_connection_error("Failed to turn off nonblocking mode on socket");
 			}
-			m_is_nonblocking = false;
+			_is_nonblocking = false;
 		}
 	}
 	[[nodiscard]]
 	auto get_posix_handle() -> PosixSocketHandle {
-		return m_handle.get();
+		return _handle.get();
 	}
 	
 private:
-	bool m_is_closed = false;
+	bool _is_closed = false;
 
 public:
 	auto reconnect() -> void {
-		m_handle = create_handle();
-		m_is_closed = false;
+		_handle = create_handle();
+		_is_closed = false;
 	}
 
 	auto write(std::span<std::byte const> const data) -> void {
-		if (m_is_closed) {
+		if (_is_closed) {
 			reconnect();
 		}
 
 		if (::send(
-				m_handle.get(),
+				_handle.get(),
 				data.data(),
 				static_cast<int>(data.size()),
 				0
@@ -1187,19 +1187,19 @@ public:
 	auto read(std::span<std::byte> const buffer, bool is_nonblocking = false) 
 		-> std::variant<ConnectionClosed, std::size_t> 
 	{
-		if (m_is_closed) {
+		if (_is_closed) {
 			return std::size_t{};
 		}
 
 		if (auto const receive_result = recv(
-				m_handle.get(), 
+				_handle.get(), 
 				reinterpret_cast<char*>(buffer.data()), 
 				static_cast<int>(buffer.size()),
 				is_nonblocking ? MSG_DONTWAIT : 0
 			); receive_result >= 0)
 		{
 			if (receive_result == 0) {
-				m_is_closed = true;
+				_is_closed = true;
 				return ConnectionClosed{};
 			}
 			return static_cast<std::size_t>(receive_result);
@@ -1215,8 +1215,8 @@ public:
 	}
 
 	RawSocket(std::u8string_view const server, Port const port) :
-		m_address_info{get_address_info(std::u8string{server}, port)}, 
-		m_handle{create_handle()}
+		_address_info{get_address_info(std::u8string{server}, port)}, 
+		_handle{create_handle()}
 	{}
 };
 
@@ -1226,7 +1226,7 @@ class TlsSocket {
 	}
 
 	using TlsContext = std::unique_ptr<SSL_CTX, decltype([](auto x){SSL_CTX_free(x);})>;
-	TlsContext m_tls_context = []{
+	TlsContext _tls_context = []{
 		if (auto const method = TLS_client_method()) {
 			if (auto const tls = SSL_CTX_new(method)) {
 				return TlsContext{tls};
@@ -1237,29 +1237,29 @@ class TlsSocket {
 	}();
 
 	using TlsConnection = std::unique_ptr<SSL, decltype([](auto x){SSL_free(x);})>;
-	TlsConnection m_tls_connection = [this]{
-		if (auto const tls_connection = SSL_new(m_tls_context.get())) {
+	TlsConnection _tls_connection = [this]{
+		if (auto const tls_connection = SSL_new(_tls_context.get())) {
 			return TlsConnection{tls_connection};
 		}
 		throw_tls_error();
 		return TlsConnection{};
 	}();
 
-	std::unique_ptr<RawSocket> m_raw_socket;
+	std::unique_ptr<RawSocket> _raw_socket;
 
 	auto update_tls_socket_handle() -> void {
-		if (1 != SSL_set_fd(m_tls_connection.get(), m_raw_socket->get_posix_handle())) {
+		if (1 != SSL_set_fd(_tls_connection.get(), _raw_socket->get_posix_handle())) {
 			throw_tls_error();
 		}
 	}
 	
 	auto configure_tls_context() -> void {
-		// SSL_CTX_set_options(m_tls_context.get(), SSL_OP_ALL);
+		// SSL_CTX_set_options(_tls_context.get(), SSL_OP_ALL);
 
-		if (1 != SSL_CTX_set_default_verify_paths(m_tls_context.get())) {
+		if (1 != SSL_CTX_set_default_verify_paths(_tls_context.get())) {
 			throw_tls_error();
 		}
-		SSL_CTX_set_read_ahead(m_tls_context.get(), true);
+		SSL_CTX_set_read_ahead(_tls_context.get(), true);
 	}
 
 	auto configure_tls_connection(std::u8string const server, Port const port) -> void {
@@ -1268,37 +1268,37 @@ class TlsSocket {
 		// For SNI (Server Name Identification)
 		// The macro casts the string to a void* for some reason. Ew.
 		// The casts are to suppress warnings about it.
-		if (1 != SSL_set_tlsext_host_name(m_tls_connection.get(), reinterpret_cast<void*>(const_cast<char*>(host_name_c_string)))) {
+		if (1 != SSL_set_tlsext_host_name(_tls_connection.get(), reinterpret_cast<void*>(const_cast<char*>(host_name_c_string)))) {
 			throw_tls_error();
 		}
 		// Configure automatic hostname check
-		if (1 != SSL_set1_host(m_tls_connection.get(), host_name_c_string)) {
+		if (1 != SSL_set1_host(_tls_connection.get(), host_name_c_string)) {
 			throw_tls_error();
 		}
 
 		// Set the socket to be used by the tls connection
-		m_raw_socket = std::make_unique<RawSocket>(server, port);
+		_raw_socket = std::make_unique<RawSocket>(server, port);
 		update_tls_socket_handle();
 	}
 
 	auto connect() -> void {
-		SSL_connect(m_tls_connection.get());
+		SSL_connect(_tls_connection.get());
 
 		// Just to check that a certificate was presented by the server
-		if (auto const certificate = SSL_get_peer_certificate(m_tls_connection.get())) {
+		if (auto const certificate = SSL_get_peer_certificate(_tls_connection.get())) {
 			X509_free(certificate);
 		}
 		else throw_tls_error();
 
 		// Get result of the certificate verification
-		auto const verify_result = SSL_get_verify_result(m_tls_connection.get());
+		auto const verify_result = SSL_get_verify_result(_tls_connection.get());
 		if (X509_V_OK != verify_result) {
 			throw_tls_error();
 		}
 	}
 
 	auto initialize_connection(std::u8string_view const server, Port const port) -> void {
-		if (m_raw_socket) {
+		if (_raw_socket) {
 			return;
 		}
 
@@ -1307,11 +1307,11 @@ class TlsSocket {
 		connect();
 	}
 
-	bool m_is_closed = false;
+	bool _is_closed = false;
 
 	auto ensure_connected() -> void {
-		if (m_is_closed) {
-			m_raw_socket->reconnect();
+		if (_is_closed) {
+			_raw_socket->reconnect();
 			update_tls_socket_handle();
 			// connect();
 		}
@@ -1319,14 +1319,14 @@ class TlsSocket {
 
 public:
 	// auto get_is_closed() -> bool {
-	// 	return m_is_closed;
+	// 	return _is_closed;
 	// }
 
 	auto write(std::span<std::byte const> const data) -> void {
 		ensure_connected();
 		
 		if (SSL_write(
-				m_tls_connection.get(),
+				_tls_connection.get(),
 				data.data(),
 				static_cast<int>(data.size())
 			) == -1)
@@ -1338,19 +1338,19 @@ public:
 	auto read(std::span<std::byte> const buffer) 
 		-> std::variant<ConnectionClosed, std::size_t> 
 	{
-		if (m_is_closed) {
+		if (_is_closed) {
 			return std::size_t{};
 		}
 		
-		m_raw_socket->make_blocking();
+		_raw_socket->make_blocking();
 		if (auto const read_result = SSL_read(
-				m_tls_connection.get(),
+				_tls_connection.get(),
 				buffer.data(),
 				static_cast<int>(buffer.size())
 			); read_result >= 0) 
 		{
 			if (read_result == 0) {
-				m_is_closed = true;
+				_is_closed = true;
 				return ConnectionClosed{};
 			}
 			return static_cast<std::size_t>(read_result);
@@ -1361,20 +1361,20 @@ public:
 	auto read_available(std::span<std::byte> const buffer) 
 		-> std::variant<ConnectionClosed, std::size_t> 
 	{
-		if (m_is_closed) {
+		if (_is_closed) {
 			return std::size_t{};
 		}
 		
-		m_raw_socket->make_nonblocking();
+		_raw_socket->make_nonblocking();
 		if (auto const read_result = SSL_read(
-				m_tls_connection.get(),
+				_tls_connection.get(),
 				buffer.data(),
 				static_cast<int>(buffer.size())
 			); read_result > 0)
 		{
 			return static_cast<std::size_t>(read_result);
 		}
-		else switch (auto const error_code = SSL_get_error(m_tls_connection.get(), read_result)) {
+		else switch (auto const error_code = SSL_get_error(_tls_connection.get(), read_result)) {
 			case SSL_ERROR_WANT_READ:
 			case SSL_ERROR_WANT_WRITE:
 				// No available data to read at the moment.
@@ -1382,7 +1382,7 @@ public:
 			case SSL_ERROR_ZERO_RETURN:
 			case SSL_ERROR_SYSCALL:
 				if (errno == 0) {
-					m_is_closed = true;
+					_is_closed = true;
 					// Peer shut down the connection.
 					return ConnectionClosed{};
 				}
@@ -1402,7 +1402,7 @@ public:
 class Socket::Implementation {
 private:
 	using SocketVariant = std::variant<RawSocket, TlsSocket>;
-	SocketVariant m_socket;
+	SocketVariant _socket;
 
 	[[nodiscard]]
 	static auto select_socket(std::u8string_view const server, Port const port, bool const is_tls_encrypted)
@@ -1416,53 +1416,53 @@ private:
 
 public:
 	auto write(std::span<std::byte const> const buffer) -> void {
-		if (std::holds_alternative<RawSocket>(m_socket)) {
-			std::get<RawSocket>(m_socket).write(buffer);
+		if (std::holds_alternative<RawSocket>(_socket)) {
+			std::get<RawSocket>(_socket).write(buffer);
 		}
-		else std::get<TlsSocket>(m_socket).write(buffer);
+		else std::get<TlsSocket>(_socket).write(buffer);
 	}
 	[[nodiscard]]
 	auto read(std::span<std::byte> const buffer)
 		-> std::variant<ConnectionClosed, std::size_t> 
 	{
-		if (std::holds_alternative<RawSocket>(m_socket)) {
-			return std::get<RawSocket>(m_socket).read(buffer);
+		if (std::holds_alternative<RawSocket>(_socket)) {
+			return std::get<RawSocket>(_socket).read(buffer);
 		}
-		return std::get<TlsSocket>(m_socket).read(buffer);
+		return std::get<TlsSocket>(_socket).read(buffer);
 	}
 	[[nodiscard]]
 	auto read_available(std::span<std::byte> const buffer) 
 		-> std::variant<ConnectionClosed, std::size_t> 
 	{
-		if (std::holds_alternative<RawSocket>(m_socket)) {
-			return std::get<RawSocket>(m_socket).read_available(buffer);
+		if (std::holds_alternative<RawSocket>(_socket)) {
+			return std::get<RawSocket>(_socket).read_available(buffer);
 		}
-		return std::get<TlsSocket>(m_socket).read_available(buffer);
+		return std::get<TlsSocket>(_socket).read_available(buffer);
 	}
 
 	Implementation(std::u8string_view const server, Port const port, bool const is_tls_encrypted) :
-		m_socket{select_socket(server, port, is_tls_encrypted)}
+		_socket{select_socket(server, port, is_tls_encrypted)}
 	{}
 };
 
 auto Socket::write(std::span<std::byte const> data) const -> void {
-	m_implementation->write(data);
+	_implementation->write(data);
 }
 
 auto Socket::read(std::span<std::byte> buffer) const 
 	-> std::variant<ConnectionClosed, std::size_t> 
 {
-	return m_implementation->read(buffer);
+	return _implementation->read(buffer);
 }
 
 auto Socket::read_available(std::span<std::byte> buffer) const 
 	-> std::variant<ConnectionClosed, std::size_t> 
 {
-	return m_implementation->read_available(buffer);
+	return _implementation->read_available(buffer);
 }
 
 Socket::Socket(std::u8string_view const server, Port const port, bool const is_tls_encrypted) :
-	m_implementation{std::make_unique<Implementation>(server, port, is_tls_encrypted)}
+	_implementation{std::make_unique<Implementation>(server, port, is_tls_encrypted)}
 {}
 Socket::~Socket() = default;
 

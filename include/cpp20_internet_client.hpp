@@ -102,7 +102,7 @@ constexpr auto select_on_type(T&& item) noexcept -> T&& {
 	its type, which is given as a template argument.
 */
 template<typename T, typename U, typename ... V> requires IsAnyOf<T, U, V...>
-[[nodiscard]] 
+[[nodiscard]]
 constexpr auto select_on_type(U&& first_item, V&& ... items) noexcept -> auto&& {
 	if constexpr (std::is_same_v<T, U>) {
 		return std::forward<U>(first_item);
@@ -115,17 +115,17 @@ constexpr auto select_on_type(U&& first_item, V&& ... items) noexcept -> auto&& 
 template<typename T> requires requires(T callable) { callable(); }
 class [[nodiscard]] Cleanup {
 private:
-	T m_callable;
+	T _callable;
 	
 public:
 	[[nodiscard]] 
 	Cleanup(T&& callable) :
-		m_callable{std::forward<T>(callable)}
+		_callable{std::forward<T>(callable)}
 	{}
 
 	Cleanup() = delete;
 	~Cleanup() {
-		m_callable();
+		_callable();
 	}
 
 	Cleanup(Cleanup&&) noexcept = delete;
@@ -564,35 +564,35 @@ namespace errors {
 */
 class ConnectionFailed : public std::exception {
 private:
-	std::string m_reason;
+	std::string _reason;
 public:
 	auto what() const noexcept -> char const* override {
-		return m_reason.c_str();
+		return _reason.c_str();
 	}
 
 private:
-	bool m_is_tls_failure;
+	bool _is_tls_failure;
 public:
 	auto get_is_tls_failure() const noexcept -> bool {
-		return m_is_tls_failure;
+		return _is_tls_failure;
 	}
 
 	ConnectionFailed(std::string reason, bool const is_tls_failure = false) :
-		m_reason(std::move(reason)),
-		m_is_tls_failure{is_tls_failure}
+		_reason(std::move(reason)),
+		_is_tls_failure{is_tls_failure}
 	{}
 };
 
 class ResponseParsingFailed : public std::exception {
 private:
-	std::string m_reason;
+	std::string _reason;
 public:
 	auto what() const noexcept -> char const* override {
-		return m_reason.c_str();
+		return _reason.c_str();
 	}
 
 	ResponseParsingFailed(std::string reason) :
-		m_reason(std::move(reason))
+		_reason(std::move(reason))
 	{}
 };
 
@@ -710,7 +710,7 @@ public:
 
 private:
 	class Implementation;
-	std::unique_ptr<Implementation> m_implementation;
+	std::unique_ptr<Implementation> _implementation;
 	
 	Socket(std::u8string_view server, Port port, bool is_tls_encrypted);
 	friend auto open_socket(std::u8string_view, Port, bool) -> Socket;
@@ -1040,10 +1040,10 @@ class ResponseProgressRaw {
 	friend class algorithms::ResponseParser;
 	
 private:
-	bool m_is_stopped = false;
+	bool _is_stopped = false;
 public:
 	constexpr auto stop() noexcept -> void {
-		m_is_stopped = true;
+		_is_stopped = true;
 	}
 
 	std::span<std::byte const> data;
@@ -1063,16 +1063,16 @@ public:
 	}
 	
 private:
-	algorithms::ParsedResponse const& m_parsed_response;
+	algorithms::ParsedResponse const& _parsed_response;
 public:
 	constexpr auto get_parsed_response() const noexcept 
 		-> algorithms::ParsedResponse const& override 
 	{
-		return m_parsed_response;
+		return _parsed_response;
 	}
 
 	ResponseProgressHeaders(ResponseProgressRaw const p_raw_progress, algorithms::ParsedResponse const& parsed_response) :
-		raw_progress{p_raw_progress}, m_parsed_response{parsed_response}
+		raw_progress{p_raw_progress}, _parsed_response{parsed_response}
 	{}
 
 	ResponseProgressHeaders() = delete;
@@ -1094,12 +1094,12 @@ public:
 	}
 	
 private:
-	algorithms::ParsedResponse const& m_parsed_response;
+	algorithms::ParsedResponse const& _parsed_response;
 public:
 	constexpr auto get_parsed_response() const noexcept 
 		-> algorithms::ParsedResponse const& override 
 	{
-		return m_parsed_response;
+		return _parsed_response;
 	}
 
 	std::span<std::byte const> body_data_so_far;
@@ -1116,7 +1116,7 @@ public:
 		std::optional<std::size_t> const p_total_expected_body_size
 	) : 
 		raw_progress{p_raw_progress},
-		m_parsed_response{parsed_response},
+		_parsed_response{parsed_response},
 		body_data_so_far{p_body_data_so_far},
 		total_expected_body_size{p_total_expected_body_size}
 	{}
@@ -1136,13 +1136,13 @@ public:
 */
 class Response : public algorithms::ParsedHeadersInterface {
 private:
-	algorithms::ParsedResponse m_parsed_response;
+	algorithms::ParsedResponse _parsed_response;
 
 public:
 	constexpr auto get_parsed_response() const noexcept
 		-> algorithms::ParsedResponse const& override 
 	{
-		return m_parsed_response;
+		return _parsed_response;
 	}
 	
 	/*
@@ -1151,7 +1151,7 @@ public:
 	*/
 	[[nodiscard]]
 	auto get_body() const -> std::span<std::byte const> {
-		return m_parsed_response.body_data;
+		return _parsed_response.body_data;
 	}
 	/*
 		Returns the body of the response as a string.
@@ -1177,11 +1177,11 @@ public:
 	}
 
 private:
-	std::u8string m_url;
+	std::u8string _url;
 public:
 	template<utils::IsByteChar _Char>
 	auto get_url() const -> std::basic_string_view<_Char> {
-		return std::basic_string_view<_Char>{reinterpret_cast<_Char const*>(m_url.data()), m_url.size()};
+		return std::basic_string_view<_Char>{reinterpret_cast<_Char const*>(_url.data()), _url.size()};
 	}
 
 	Response() = delete;
@@ -1194,8 +1194,8 @@ public:
 	auto operator=(Response&&) noexcept -> Response& = default;
 
 	Response(algorithms::ParsedResponse&& parsed_response, std::u8string&& url) :
-		m_parsed_response{std::move(parsed_response)},
-		m_url{std::move(url)}
+		_parsed_response{std::move(parsed_response)},
+		_url{std::move(url)}
 	{}
 };
 
@@ -1205,58 +1205,58 @@ class ChunkyBodyParser {
 private:
 	static constexpr auto newline = std::string_view{"\r\n"};
 
-	utils::DataVector m_result;
-	bool m_has_returned_result = false;
+	utils::DataVector _result;
+	bool _has_returned_result = false;
 
-	std::size_t m_chunk_size_left;
+	std::size_t _chunk_size_left;
 
 	auto parse_chunk_size_left(std::string_view const string) -> void {
 		// hexadecimal
 		if (auto const result = utils::string_to_integral<std::size_t>(string, 16)) {
-			m_chunk_size_left = *result;
+			_chunk_size_left = *result;
 		}
 		else throw errors::ResponseParsingFailed{"Failed parsing http body chunk size."};
 	}
 
 	auto parse_chunk_body_part(std::span<std::byte const> const new_data) -> std::size_t {
-		if (m_chunk_size_left > new_data.size())
+		if (_chunk_size_left > new_data.size())
 		{
-			m_chunk_size_left -= new_data.size();
-			utils::append_to_vector(m_result, new_data);
+			_chunk_size_left -= new_data.size();
+			utils::append_to_vector(_result, new_data);
 			return new_data.size();
 		}
 		else {
-			utils::append_to_vector(m_result, new_data.first(m_chunk_size_left));
+			utils::append_to_vector(_result, new_data.first(_chunk_size_left));
 
 			// After each chunk, there is a \r\n and then the size of the next chunk.
 			// We skip the \r\n so the next part starts at the size number.
-			auto const part_end = m_chunk_size_left + newline.size();
-			m_chunk_size_left = 0;
+			auto const part_end = _chunk_size_left + newline.size();
+			_chunk_size_left = 0;
 			return part_end;
 		}
 	}
 
-	std::string m_chunk_size_string_buffer;
-	bool m_is_finished = false;
+	std::string _chunk_size_string_buffer;
+	bool _is_finished = false;
 
 	auto parse_chunk_separator_part(std::span<std::byte const> const new_data) -> std::size_t {
 		auto const data_string = utils::data_to_string<char>(new_data);
 
 		auto const first_newline_character_pos = data_string.find(newline[0]);
 		if (first_newline_character_pos == std::string_view::npos) {
-			m_chunk_size_string_buffer += data_string;
+			_chunk_size_string_buffer += data_string;
 			return new_data.size();
 		}
-		else if (m_chunk_size_string_buffer.empty()) {
+		else if (_chunk_size_string_buffer.empty()) {
 			parse_chunk_size_left(data_string.substr(0, first_newline_character_pos));
 		}
 		else {
-			m_chunk_size_string_buffer += data_string.substr(0, first_newline_character_pos);
-			parse_chunk_size_left(m_chunk_size_string_buffer);
-			m_chunk_size_string_buffer.clear();
+			_chunk_size_string_buffer += data_string.substr(0, first_newline_character_pos);
+			parse_chunk_size_left(_chunk_size_string_buffer);
+			_chunk_size_string_buffer.clear();
 		}
-		if (m_chunk_size_left == 0) {
-			m_is_finished = true;
+		if (_chunk_size_left == 0) {
+			_is_finished = true;
 			return 0;
 		}
 		return first_newline_character_pos + newline.size();
@@ -1269,42 +1269,42 @@ private:
 		It may be past the end of the part.
 	*/
 	auto parse_next_part(std::span<std::byte const> const new_data) -> std::size_t {
-		if (m_chunk_size_left) {
+		if (_chunk_size_left) {
 			return parse_chunk_body_part(new_data);
 		}
 		else return parse_chunk_separator_part(new_data);
 	}
 	
-	std::size_t m_start_parse_offset;
+	std::size_t _start_parse_offset;
 
 public:
 	auto parse_new_data(std::span<std::byte const> const new_data) -> std::optional<utils::DataVector> {
-		if (m_has_returned_result) {
+		if (_has_returned_result) {
 			return {};
 		}
-		if (m_is_finished) {
-			m_has_returned_result = true;
-			return std::move(m_result);
+		if (_is_finished) {
+			_has_returned_result = true;
+			return std::move(_result);
 		}
 		
-		auto cursor = m_start_parse_offset;
+		auto cursor = _start_parse_offset;
 		
 		while (true) {
 			if (cursor >= new_data.size()) {
-				m_start_parse_offset = cursor - new_data.size();
+				_start_parse_offset = cursor - new_data.size();
 				return {};
 			}
 			if (auto const cursor_offset = parse_next_part(new_data.subspan(cursor))) {
 				cursor += cursor_offset;
 			}
 			else {
-				m_has_returned_result = true;
-				return std::move(m_result);
+				_has_returned_result = true;
+				return std::move(_result);
 			}
 		}
 	}
 	auto get_result_so_far() -> std::span<std::byte const> {
-		return m_result;
+		return _result;
 	}
 };
 
@@ -1322,27 +1322,27 @@ struct ResponseCallbacks {
 */
 class ResponseParser {
 private:
-	utils::DataVector m_buffer;
+	utils::DataVector _buffer;
 
-	std::optional<ResponseCallbacks*> m_callbacks;
+	std::optional<ResponseCallbacks*> _callbacks;
 
-	ParsedResponse m_result;
-	bool m_is_done = false;
+	ParsedResponse _result;
+	bool _is_done = false;
 
 	auto finish() -> void {
-		m_is_done = true;
-		if (m_callbacks && (*m_callbacks)->handle_stop) {
-			(*m_callbacks)->handle_stop();
+		_is_done = true;
+		if (_callbacks && (*_callbacks)->handle_stop) {
+			(*_callbacks)->handle_stop();
 		}
 	}
 
-	std::size_t m_body_start{};
-	std::size_t m_body_size{};
+	std::size_t _body_start{};
+	std::size_t _body_size{};
 
 	[[nodiscard]]
 	auto get_body_size() -> std::optional<std::size_t> {
 		if (auto const content_length_string = 
-				algorithms::find_header_by_name(m_result.headers, "content-length")) 
+				algorithms::find_header_by_name(_result.headers, "content-length")) 
 		{
 			if (auto const parse_result = 
 					utils::string_to_integral<std::size_t>((*content_length_string)->value)) 
@@ -1362,12 +1362,12 @@ private:
 				static_cast<std::int64_t>(new_data_start - empty_line.length() + 1)
 			));
 			
-			auto const string_view_to_search = utils::data_to_string<char>(std::span{m_buffer});
+			auto const string_view_to_search = utils::data_to_string<char>(std::span{_buffer});
 
 			if (auto const position = string_view_to_search.find(empty_line, find_start);
 				position != std::string_view::npos) 
 			{
-				m_body_start = position + empty_line.length();
+				_body_start = position + empty_line.length();
 				return string_view_to_search.substr(0, position);
 			}
 		}
@@ -1377,104 +1377,103 @@ private:
 	auto try_parse_headers(std::size_t const new_data_start) -> void {
 		if (auto const headers_string = try_extract_headers_string(new_data_start))
 		{
-			m_result.headers_string = *headers_string;
+			_result.headers_string = *headers_string;
 
-			auto status_line_end = m_result.headers_string.find_first_of("\r\n");
+			auto status_line_end = _result.headers_string.find_first_of("\r\n");
 			if (status_line_end == std::string_view::npos) {
-				status_line_end = m_result.headers_string.size();
+				status_line_end = _result.headers_string.size();
 			}
 			
-			m_result.status_line = algorithms::parse_status_line(
-				std::string_view{m_result.headers_string}.substr(0, status_line_end)
+			_result.status_line = algorithms::parse_status_line(
+				std::string_view{_result.headers_string}.substr(0, status_line_end)
 			);
 
-			if (m_result.headers_string.size() > status_line_end) {
-				m_result.headers = algorithms::parse_headers_string(
-					std::string_view{m_result.headers_string}.substr(status_line_end)
+			if (_result.headers_string.size() > status_line_end) {
+				_result.headers = algorithms::parse_headers_string(
+					std::string_view{_result.headers_string}.substr(status_line_end)
 				);
 			}
 
-			if (m_callbacks && (*m_callbacks)->handle_headers) {
-				auto progress_headers = ResponseProgressHeaders{ResponseProgressRaw{m_buffer, new_data_start}, m_result};
-				(*m_callbacks)->handle_headers(progress_headers);
-				if (progress_headers.raw_progress.m_is_stopped) {
+			if (_callbacks && (*_callbacks)->handle_headers) {
+				auto progress_headers = ResponseProgressHeaders{ResponseProgressRaw{_buffer, new_data_start}, _result};
+				(*_callbacks)->handle_headers(progress_headers);
+				if (progress_headers.raw_progress._is_stopped) {
 					finish();
 				}
 			}
 
 			if (auto const body_size_try = get_body_size()) {
-				m_body_size = *body_size_try;
+				_body_size = *body_size_try;
 			}
 			else if (auto const transfer_encoding = 
-					algorithms::find_header_by_name(m_result.headers, "transfer-encoding");
+					algorithms::find_header_by_name(_result.headers, "transfer-encoding");
 				transfer_encoding && (*transfer_encoding)->value == "chunked")
 			{
-				m_chunky_body_parser = ChunkyBodyParser{};
+				_chunky_body_parser = ChunkyBodyParser{};
 			}
 		}
 	}
 
-	std::optional<ChunkyBodyParser> m_chunky_body_parser;
+	std::optional<ChunkyBodyParser> _chunky_body_parser;
 
 	auto parse_new_chunky_body_data(std::size_t const new_data_start) -> void {
 		// May need to add an offset if this packet is
 		// where the headers end and the body starts.
-		auto const body_parse_start = std::max(new_data_start, m_body_start);
-		if (auto const body = m_chunky_body_parser->parse_new_data(std::span{m_buffer}.subspan(body_parse_start))) 
+		auto const body_parse_start = std::max(new_data_start, _body_start);
+		if (auto const body = _chunky_body_parser->parse_new_data(std::span{_buffer}.subspan(body_parse_start))) 
 		{
-			m_result.body_data = std::move(*body);
+			_result.body_data = std::move(*body);
 
-			if (m_callbacks && (*m_callbacks)->handle_body_progress) {
+			if (_callbacks && (*_callbacks)->handle_body_progress) {
 				auto body_progress = ResponseProgressBody{
-					ResponseProgressRaw{m_buffer, new_data_start}, 
-					m_result, 
-					m_result.body_data, {}
+					ResponseProgressRaw{_buffer, new_data_start}, 
+					_result, 
+					_result.body_data, {}
 				};
-				(*m_callbacks)->handle_body_progress(body_progress);
+				(*_callbacks)->handle_body_progress(body_progress);
 			}
 			
 			finish();
 		}
-		else if (m_callbacks && (*m_callbacks)->handle_body_progress) {
+		else if (_callbacks && (*_callbacks)->handle_body_progress) {
 			auto body_progress = ResponseProgressBody{
-				ResponseProgressRaw{m_buffer, new_data_start}, 
-				m_result, 
-				m_chunky_body_parser->get_result_so_far(), {}
+				ResponseProgressRaw{_buffer, new_data_start}, 
+				_result, 
+				_chunky_body_parser->get_result_so_far(), {}
 			};
-			(*m_callbacks)->handle_body_progress(body_progress);
-			if (body_progress.raw_progress.m_is_stopped) {
+			(*_callbacks)->handle_body_progress(body_progress);
+			if (body_progress.raw_progress._is_stopped) {
 				finish();
 			}
 		}
 	}
 
 	auto parse_new_regular_body_data(std::size_t const new_data_start) -> void {
-		if (m_buffer.size() >= m_body_start + m_body_size) 
-		{
-			auto const body_begin = m_buffer.begin() + m_body_start;
-			m_result.body_data = utils::DataVector(body_begin, body_begin + m_body_size);
+		if (_buffer.size() >= _body_start + _body_size) {
+			auto const body_begin = _buffer.begin() + _body_start;
+			_result.body_data = utils::DataVector(body_begin, body_begin + _body_size);
 
-			if (m_callbacks && (*m_callbacks)->handle_body_progress) {
+			if (_callbacks && (*_callbacks)->handle_body_progress) {
 				auto body_progress = ResponseProgressBody{
-					ResponseProgressRaw{m_buffer, new_data_start}, 
-					m_result, 
-					m_result.body_data, 
-					m_body_size
+					ResponseProgressRaw{_buffer, new_data_start}, 
+					_result, 
+					_result.body_data, 
+					_body_size
 				};
-				(*m_callbacks)->handle_body_progress(body_progress);
+				(*_callbacks)->handle_body_progress(body_progress);
 			}
 
 			finish();
 		}
-		else if (m_callbacks && (*m_callbacks)->handle_body_progress) {
+		else if (_callbacks && (*_callbacks)->handle_body_progress) {
 			auto body_progress = ResponseProgressBody{
-				ResponseProgressRaw{m_buffer, new_data_start}, 
-				m_result, 
-				std::span{m_buffer}.subspan(m_body_start), 
-				m_body_size
+				ResponseProgressRaw{_buffer, new_data_start}, 
+				_result, 
+				std::span{_buffer}.subspan(_body_start), 
+				_body_size
 			};
-			(*m_callbacks)->handle_body_progress(body_progress);
-			if (body_progress.raw_progress.m_is_stopped) {
+			(*_callbacks)->handle_body_progress(body_progress);
+			if (body_progress.raw_progress._is_stopped) {
 				finish();
 			}
 		}
@@ -1487,43 +1486,43 @@ public:
 	*/
 	[[nodiscard]]
 	auto parse_new_data(std::span<std::byte const> const data) -> std::optional<ParsedResponse> {
-		if (m_is_done) {
+		if (_is_done) {
 			return {};
 		}
 		
-		auto const new_data_start = m_buffer.size();
+		auto const new_data_start = _buffer.size();
 		
-		utils::append_to_vector(m_buffer, data);
+		utils::append_to_vector(_buffer, data);
 
-		if (m_callbacks && (*m_callbacks)->handle_raw_progress) {
-			auto raw_progress = ResponseProgressRaw{m_buffer, new_data_start};
-			(*m_callbacks)->handle_raw_progress(raw_progress);
-			if (raw_progress.m_is_stopped) {
+		if (_callbacks && (*_callbacks)->handle_raw_progress) {
+			auto raw_progress = ResponseProgressRaw{_buffer, new_data_start};
+			(*_callbacks)->handle_raw_progress(raw_progress);
+			if (raw_progress._is_stopped) {
 				finish();
 			}
 		}
 		
-		if (!m_is_done && m_result.headers_string.empty()) {
+		if (!_is_done && _result.headers_string.empty()) {
 			try_parse_headers(new_data_start);
 		}
 
-		if (!m_is_done && !m_result.headers_string.empty()) {
-			if (m_chunky_body_parser) {
+		if (!_is_done && !_result.headers_string.empty()) {
+			if (_chunky_body_parser) {
 				parse_new_chunky_body_data(new_data_start);
 			}
 			else {
 				parse_new_regular_body_data(new_data_start);
 			}
 		}
-		if (m_is_done) {
-			return std::move(m_result);
+		if (_is_done) {
+			return std::move(_result);
 		}
 		return {};
 	}
 
 	ResponseParser() = default;
 	ResponseParser(ResponseCallbacks& callbacks) :
-		m_callbacks{&callbacks}
+		_callbacks{&callbacks}
 	{}
 };
 
@@ -1597,7 +1596,7 @@ inline auto request_method_to_string(RequestMethod method) -> std::string_view {
 */
 class Request {
 private:
-	std::string m_headers{"\r\n"};
+	std::string _headers{"\r\n"};
 
 public:
 	/*
@@ -1612,9 +1611,9 @@ public:
 			return std::move(*this);
 		}
 		
-		m_headers += headers_string;
+		_headers += headers_string;
 		if (headers_string.back() != '\n') {
-			m_headers += "\r\n"; // CRLF is the correct line ending for the HTTP protocol
+			_headers += "\r\n"; // CRLF is the correct line ending for the HTTP protocol
 		}
 		
 		return std::move(*this);
@@ -1658,17 +1657,17 @@ public:
 	}
 
 private:
-	utils::DataVector m_body;
+	utils::DataVector _body;
 
 public:
 	template<utils::IsByte _Byte>
 	auto set_body(std::span<_Byte const> const body_data) -> void {
-		m_body.resize(body_data.size());
+		_body.resize(body_data.size());
 		if constexpr (std::same_as<_Byte, std::byte>) {
-			std::ranges::copy(body_data, m_body);
+			std::ranges::copy(body_data, _body);
 		}
 		else {
-			std::ranges::copy(std::span{reinterpret_cast<std::byte const*>(body_data.data()), body_data.size()}, m_body);
+			std::ranges::copy(std::span{reinterpret_cast<std::byte const*>(body_data.data()), body_data.size()}, _body);
 		}
 	}
 	template<utils::IsByteChar _Char>
@@ -1677,47 +1676,47 @@ public:
 	}
 
 private:
-	RequestMethod m_method;
+	RequestMethod _method;
 
-	std::u8string m_url;
-	utils::SplitUrl<char8_t> m_split_url;
+	std::u8string _url;
+	utils::SplitUrl<char8_t> _split_url;
 
-	algorithms::ResponseCallbacks m_callbacks;
+	algorithms::ResponseCallbacks _callbacks;
 
 public:
 	auto set_raw_progress_callback(std::function<void(ResponseProgressRaw&)> callback) && -> Request&& {
-		m_callbacks.handle_raw_progress = std::move(callback);
+		_callbacks.handle_raw_progress = std::move(callback);
 		return std::move(*this);
 	}
 	auto set_headers_callback(std::function<void(ResponseProgressHeaders&)> callback) && -> Request&& {
-		m_callbacks.handle_headers = std::move(callback);
+		_callbacks.handle_headers = std::move(callback);
 		return std::move(*this);
 	}
 	auto set_body_progress_callback(std::function<void(ResponseProgressBody&)> callback) && -> Request&& {
-		m_callbacks.handle_body_progress = std::move(callback);
+		_callbacks.handle_body_progress = std::move(callback);
 		return std::move(*this);
 	}
 	auto set_finish_callback(std::function<void(Response&)> callback) && -> Request&& {
-		m_callbacks.handle_finish = std::move(callback);
+		_callbacks.handle_finish = std::move(callback);
 		return std::move(*this);
 	}
 
 private:
 	auto send_and_get_receive_socket() const -> Socket {
-		auto socket = open_socket(m_split_url.domain_name, utils::get_port(m_split_url.protocol));
+		auto socket = open_socket(_split_url.domain_name, utils::get_port(_split_url.protocol));
 		
 		using namespace std::string_view_literals;
 		
 		// TODO: Use std::format when it has been implemented.
 		auto const request_data = utils::concatenate_byte_data(
-			request_method_to_string(m_method),
+			request_method_to_string(_method),
 			' ',
-			utils::u8string_to_utf8_string(m_split_url.path),
+			utils::u8string_to_utf8_string(_split_url.path),
 			" HTTP/1.1\r\nHost: "sv,
-			utils::u8string_to_utf8_string(m_split_url.domain_name),
-			m_headers,
+			utils::u8string_to_utf8_string(_split_url.domain_name),
+			_headers,
 			"\r\n"sv,
-			m_body
+			_body
 		);
 		socket.write(request_data);
 
@@ -1730,14 +1729,14 @@ public:
 	*/
 	[[nodiscard]] 
 	auto send() && -> Response {
-		return algorithms::receive_response(send_and_get_receive_socket(), std::move(m_url), std::move(m_callbacks));
+		return algorithms::receive_response(send_and_get_receive_socket(), std::move(_url), std::move(_callbacks));
 	}
 	/*
 		Sends the request and returns immediately after the data has been sent.
 		The returned future receives the response asynchronously.
 	*/
 	auto send_async() && -> std::future<Response> {
-		return std::async(&algorithms::receive_response, send_and_get_receive_socket(), std::move(m_url), std::move(m_callbacks));
+		return std::async(&algorithms::receive_response, send_and_get_receive_socket(), std::move(_url), std::move(_callbacks));
 	}
 
 	Request() = delete;
@@ -1751,12 +1750,12 @@ public:
 
 private:
 	Request(RequestMethod const method, std::u8string_view const url, Protocol const default_protocol) :
-		m_method{method},
-		m_url{utils::uri_encode(url)},
-		m_split_url{utils::split_url(std::u8string_view{m_url})}
+		_method{method},
+		_url{utils::uri_encode(url)},
+		_split_url{utils::split_url(std::u8string_view{_url})}
 	{
-		if (m_split_url.protocol == Protocol::Unknown) {
-			m_split_url.protocol = default_protocol;
+		if (_split_url.protocol == Protocol::Unknown) {
+			_split_url.protocol = default_protocol;
 		}
 	}
 	friend auto get(std::u8string_view, Protocol) -> Request;
