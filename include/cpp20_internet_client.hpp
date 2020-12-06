@@ -366,6 +366,7 @@ auto concatenate_byte_data(T&& ... arguments) -> DataVector {
 	For more details, see std::from_chars. This is just an abstraction layer on top of it.
 */
 template<std::integral T>
+[[nodiscard]]
 auto string_to_integral(IsByteStringView auto const string, int const base = 10) -> std::optional<T> {
 	auto number_result = T{};
 	auto const char_pointer = reinterpret_cast<char const*>(string.data());
@@ -409,17 +410,20 @@ constexpr auto ascii_lowercase_transform = std::views::transform([](char c) {
 	return static_cast<char>(std::tolower(c));
 });
 
+[[nodiscard]]
 constexpr auto equal_ascii_case_insensitive(std::string_view const lhs, std::string_view const rhs) noexcept -> bool {
 	return std::ranges::equal(lhs | ascii_lowercase_transform, rhs | ascii_lowercase_transform);
 }
 
 //---------------------------------------------------------
 
+[[nodiscard]]
 constexpr auto get_port(Protocol protocol) noexcept -> Port {
 	return static_cast<Port>(protocol);
 }
 
 template<IsByteStringView _StringView>
+[[nodiscard]]
 auto get_protocol_from_string(_StringView const protocol_string) noexcept 
 	-> Protocol 
 {
@@ -498,6 +502,7 @@ inline auto split_url(_StringView const url)
 	Returns the file name part of a URL (or file path with only forward slashes).
 */
 template<IsByteStringView _StringView, typename _Char = _StringView::value_type>
+[[nodiscard]]
 constexpr auto extract_filename(_StringView const url) 
 	-> _StringView
 {
@@ -515,6 +520,7 @@ constexpr auto extract_filename(_StringView const url)
 	return {};
 }
 
+[[nodiscard]]
 constexpr auto get_is_allowed_uri_character(char const character) noexcept -> bool {
 	constexpr auto other_characters = std::string_view{"%-._~:/?#[]@!$&'()*+,;="};
 	
@@ -529,6 +535,7 @@ template<
 	typename _Char = _StringView::value_type, 
 	typename _String = std::basic_string<_Char>
 >
+[[nodiscard]]
 auto uri_encode(_StringView const uri) -> _String {
 	using namespace std::string_view_literals;
 	
@@ -566,6 +573,7 @@ class ConnectionFailed : public std::exception {
 private:
 	std::string _reason;
 public:
+	[[nodiscard]]
 	auto what() const noexcept -> char const* override {
 		return _reason.c_str();
 	}
@@ -573,6 +581,7 @@ public:
 private:
 	bool _is_tls_failure;
 public:
+	[[nodiscard]]
 	auto get_is_tls_failure() const noexcept -> bool {
 		return _is_tls_failure;
 	}
@@ -587,6 +596,7 @@ class ResponseParsingFailed : public std::exception {
 private:
 	std::string _reason;
 public:
+	[[nodiscard]]
 	auto what() const noexcept -> char const* override {
 		return _reason.c_str();
 	}
@@ -748,6 +758,7 @@ struct Header;
 struct HeaderCopy {
 	std::string name, value;
 
+	[[nodiscard]]
 	inline explicit operator Header() const;
 };
 /*
@@ -863,6 +874,7 @@ struct StatusLine {
 	StatusCode status_code = StatusCode::Unknown;
 	std::string status_message;
 
+	[[nodiscard]]
 	auto operator==(StatusLine const&) const noexcept -> bool = default;
 };
 
@@ -955,9 +967,10 @@ struct ParsedResponse {
 	std::string headers_string;
 	std::vector<Header> headers; // Points into headers_string
 	utils::DataVector body_data;
+
+	[[nodiscard]]
 	auto operator==(ParsedResponse const&) const noexcept -> bool = default;
 };
-
 
 struct ParsedHeadersInterface {
 	constexpr virtual auto get_parsed_response() const noexcept -> ParsedResponse const& = 0;
@@ -1065,6 +1078,7 @@ public:
 private:
 	algorithms::ParsedResponse const& _parsed_response;
 public:
+	[[nodiscard]]
 	constexpr auto get_parsed_response() const noexcept 
 		-> algorithms::ParsedResponse const& override 
 	{
@@ -1096,6 +1110,7 @@ public:
 private:
 	algorithms::ParsedResponse const& _parsed_response;
 public:
+	[[nodiscard]]
 	constexpr auto get_parsed_response() const noexcept 
 		-> algorithms::ParsedResponse const& override 
 	{
@@ -1139,6 +1154,7 @@ private:
 	algorithms::ParsedResponse _parsed_response;
 
 public:
+	[[nodiscard]]
 	constexpr auto get_parsed_response() const noexcept
 		-> algorithms::ParsedResponse const& override 
 	{
@@ -1180,6 +1196,7 @@ private:
 	std::u8string _url;
 public:
 	template<utils::IsByteChar _Char>
+	[[nodiscard]]
 	auto get_url() const -> std::basic_string_view<_Char> {
 		return std::basic_string_view<_Char>{reinterpret_cast<_Char const*>(_url.data()), _url.size()};
 	}
@@ -1218,6 +1235,7 @@ private:
 		else throw errors::ResponseParsingFailed{"Failed parsing http body chunk size."};
 	}
 
+	[[nodiscard]]
 	auto parse_chunk_body_part(std::span<std::byte const> const new_data) -> std::size_t {
 		if (_chunk_size_left > new_data.size())
 		{
@@ -1239,6 +1257,7 @@ private:
 	std::string _chunk_size_string_buffer;
 	bool _is_finished = false;
 
+	[[nodiscard]]
 	auto parse_chunk_separator_part(std::span<std::byte const> const new_data) -> std::size_t {
 		auto const data_string = utils::data_to_string<char>(new_data);
 
@@ -1268,6 +1287,7 @@ private:
 		Returns the position where the part ended.
 		It may be past the end of the part.
 	*/
+	[[nodiscard]]
 	auto parse_next_part(std::span<std::byte const> const new_data) -> std::size_t {
 		if (_chunk_size_left) {
 			return parse_chunk_body_part(new_data);
@@ -1278,6 +1298,7 @@ private:
 	std::size_t _start_parse_offset;
 
 public:
+	[[nodiscard]]
 	auto parse_new_data(std::span<std::byte const> const new_data) -> std::optional<utils::DataVector> {
 		if (_has_returned_result) {
 			return {};
@@ -1303,6 +1324,7 @@ public:
 			}
 		}
 	}
+	[[nodiscard]]
 	auto get_result_so_far() -> std::span<std::byte const> {
 		return _result;
 	}
@@ -1573,19 +1595,20 @@ enum class RequestMethod {
 	Trace,
 };
 
+[[nodiscard]]
 inline auto request_method_to_string(RequestMethod method) -> std::string_view {
 	// TODO: Use using enum declarations when supported by gcc.
 	// using enum RequestMethod;
 	switch (method) {
 		case RequestMethod::Connect: return "CONNECT";
-		case RequestMethod::Delete: return "DELETE";
-		case RequestMethod::Get: return "GET";
-		case RequestMethod::Head: return "HEAD";
+		case RequestMethod::Delete:  return "DELETE";
+		case RequestMethod::Get:     return "GET";
+		case RequestMethod::Head:    return "HEAD";
 		case RequestMethod::Options: return "OPTIONS";
-		case RequestMethod::Patch: return "PATCH";
-		case RequestMethod::Post: return "POST";
-		case RequestMethod::Put: return "PUT";
-		case RequestMethod::Trace: return "TRACE";
+		case RequestMethod::Patch:   return "PATCH";
+		case RequestMethod::Post:    return "POST";
+		case RequestMethod::Put:     return "PUT";
+		case RequestMethod::Trace:   return "TRACE";
 	}
 	utils::unreachable();
 }
@@ -1606,6 +1629,7 @@ public:
 		Non-ASCII bytes are considered opaque data,
 		according to the HTTP specification.
 	*/
+	[[nodiscard]]
 	auto add_headers(std::string_view const headers_string) && -> Request&& {
 		if (headers_string.empty()) {
 			return std::move(*this);
@@ -1622,6 +1646,7 @@ public:
 		Adds headers to the request.
 	*/
 	template<IsHeader _Header, std::size_t extent = std::dynamic_extent>
+	[[nodiscard]]
 	auto add_headers(std::span<_Header const, extent> const headers) && -> Request&& {
 		auto headers_string = std::string{};
 		headers_string.reserve(headers.size()*128);
@@ -1636,6 +1661,7 @@ public:
 	/*
 		Adds headers to the request.
 	*/
+	[[nodiscard]]
 	auto add_headers(std::initializer_list<Header const> const headers) && -> Request&& {
 		return std::move(*this).add_headers(std::span{headers});
 	}
@@ -1644,6 +1670,7 @@ public:
 		This is a variadic template that can take any number of headers.
 	*/
 	template<IsHeader ... _Header>
+	[[nodiscard]]
 	auto add_headers(_Header&& ... p_headers) && -> Request&& {
 		auto const headers = std::array{Header{p_headers}...};
 		return std::move(*this).add_headers(std::span{headers});
@@ -1652,6 +1679,7 @@ public:
 		Adds a single header to the request.
 		Equivalent to add_headers with a single Header argument.
 	*/
+	[[nodiscard]]
 	auto add_header(Header const& header) && -> Request&& {
 		return std::move(*this).add_headers(((std::string{header.name} += ": ") += header.value));
 	}
@@ -1661,18 +1689,24 @@ private:
 
 public:
 	template<utils::IsByte _Byte>
-	auto set_body(std::span<_Byte const> const body_data) -> void {
+	[[nodiscard]]
+	auto set_body(std::span<_Byte const> const body_data) && -> Request&& {
 		_body.resize(body_data.size());
 		if constexpr (std::same_as<_Byte, std::byte>) {
-			std::ranges::copy(body_data, _body);
+			std::ranges::copy(body_data, _body.begin());
 		}
 		else {
-			std::ranges::copy(std::span{reinterpret_cast<std::byte const*>(body_data.data()), body_data.size()}, _body);
+			std::ranges::copy(std::span{reinterpret_cast<std::byte const*>(body_data.data()), body_data.size()}, _body.begin());
 		}
+		return std::move(*this);
 	}
-	template<utils::IsByteChar _Char>
-	auto set_body(std::basic_string_view<_Char> const body_data) -> void {
-		set_body(utils::string_to_data<std::byte>(body_data));
+	[[nodiscard]]
+	auto set_body(std::string_view const body_data) && -> Request&& {
+		return std::move(*this).set_body(utils::string_to_data<std::byte>(body_data));
+	}
+	[[nodiscard]]
+	auto set_body(std::u8string_view const body_data) && -> Request&& {
+		return std::move(*this).set_body(utils::string_to_data<std::byte>(body_data));
 	}
 
 private:
@@ -1684,30 +1718,34 @@ private:
 	algorithms::ResponseCallbacks _callbacks;
 
 public:
+	[[nodiscard]]
 	auto set_raw_progress_callback(std::function<void(ResponseProgressRaw&)> callback) && -> Request&& {
 		_callbacks.handle_raw_progress = std::move(callback);
 		return std::move(*this);
 	}
+	[[nodiscard]]
 	auto set_headers_callback(std::function<void(ResponseProgressHeaders&)> callback) && -> Request&& {
 		_callbacks.handle_headers = std::move(callback);
 		return std::move(*this);
 	}
+	[[nodiscard]]
 	auto set_body_progress_callback(std::function<void(ResponseProgressBody&)> callback) && -> Request&& {
 		_callbacks.handle_body_progress = std::move(callback);
 		return std::move(*this);
 	}
+	[[nodiscard]]
 	auto set_finish_callback(std::function<void(Response&)> callback) && -> Request&& {
 		_callbacks.handle_finish = std::move(callback);
 		return std::move(*this);
 	}
 
 private:
+	[[nodiscard]]
 	auto send_and_get_receive_socket() const -> Socket {
 		auto socket = open_socket(_split_url.domain_name, utils::get_port(_split_url.protocol));
 		
 		using namespace std::string_view_literals;
 		
-		// TODO: Use std::format when it has been implemented.
 		auto const request_data = utils::concatenate_byte_data(
 			request_method_to_string(_method),
 			' ',
@@ -1715,7 +1753,11 @@ private:
 			" HTTP/1.1\r\nHost: "sv,
 			utils::u8string_to_utf8_string(_split_url.domain_name),
 			_headers,
-			"\r\n"sv,
+			"Transfer-Encoding: identity"sv,
+			"\r\n"
+			"Content-Length: "sv,
+			std::to_string(_body.size()),
+			"\r\n\r\n",
 			_body
 		);
 		socket.write(request_data);
@@ -1727,7 +1769,7 @@ public:
 	/*
 		Sends the request and blocks until the response has been received.
 	*/
-	[[nodiscard]] 
+	[[nodiscard]]
 	auto send() && -> Response {
 		return algorithms::receive_response(send_and_get_receive_socket(), std::move(_url), std::move(_callbacks));
 	}
