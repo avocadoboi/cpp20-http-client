@@ -1741,10 +1741,17 @@ public:
 
 private:
 	[[nodiscard]]
-	auto send_and_get_receive_socket() const -> Socket {
+	auto send_and_get_receive_socket() -> Socket {
 		auto socket = open_socket(_split_url.domain_name, utils::get_port(_split_url.protocol));
 		
 		using namespace std::string_view_literals;
+		using namespace std::string_literals;
+
+		if (!_body.empty()) {
+			// TODO: Use std::format when available
+			((((_headers += "Transfer-Encoding: identity"sv) += "\r\n"sv) +=
+				"Content-Length: "sv) += std::to_string(_body.size())) += "\r\n"sv;
+		}
 		
 		auto const request_data = utils::concatenate_byte_data(
 			request_method_to_string(_method),
@@ -1753,11 +1760,7 @@ private:
 			" HTTP/1.1\r\nHost: "sv,
 			utils::u8string_to_utf8_string(_split_url.domain_name),
 			_headers,
-			"Transfer-Encoding: identity"sv,
-			"\r\n"
-			"Content-Length: "sv,
-			std::to_string(_body.size()),
-			"\r\n\r\n",
+			"\r\n"sv,
 			_body
 		);
 		socket.write(request_data);
