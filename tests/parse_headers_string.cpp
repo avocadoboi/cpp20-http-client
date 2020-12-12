@@ -29,7 +29,7 @@ Last-Modified: tomorrow at 4 am
 
 	REQUIRE(headers.size() == expected.size());
 
-	for (auto i = size_t{}; i < headers.size(); i++) {
+	for (auto i = std::size_t{}; i < headers.size(); ++i) {
 		CHECK(headers[i] == expected[i]);
 	}
 }

@@ -5,7 +5,7 @@ auto test_response_parser(std::string_view const input, http::algorithms::Parsed
 {
 	auto const response_data = utils::string_to_data<std::byte>(input);
 
-	for (size_t const packet_size : {1, 8, 32, 128, 512, 2048})
+	for (std::size_t const packet_size : {1, 8, 32, 128, 512, 2048})
 	{
 		auto parser = http::algorithms::ResponseParser{};
 
