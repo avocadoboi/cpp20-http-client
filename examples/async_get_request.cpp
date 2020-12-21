@@ -10,10 +10,12 @@ auto main() -> int {
             std::cout << "Got " << progress.data.size() << " bytes so far.\n";
         })
         .set_headers_callback([](http::ResponseProgressHeaders& headers) {
+            std::cout << "Got headers.\n";
             std::cout << "Status code: " << static_cast<int>(headers.get_status_code()) << '\n';
             if (auto const date = headers.get_header_value("date")) {
                 std::cout << "\"date\" header: " << *date << '\n';
             }
+            std::cout << "Stopped reading response after headers.\n";
             // Don't continue with reading the body, stop after headers
             headers.stop();
         })

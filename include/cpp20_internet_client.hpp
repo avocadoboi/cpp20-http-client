@@ -68,7 +68,7 @@ namespace internet_client {
 using Port = int;
 
 /*
-	An enumeration of the communication protocols that are supported by the library.
+	An enumeration of the transfer protocols that are supported by the library.
 */
 enum class Protocol : Port {
 	Http = 80,
@@ -112,6 +112,31 @@ constexpr auto select_on_type(U&& first_item, V&& ... items) noexcept -> auto&& 
 
 //---------------------------------------------------------
 
+template<typename T>
+concept IsTrivial = std::is_trivial_v<T>;
+
+template<typename _Functor, typename ... _Arguments>
+concept IsFunctorInvocable = requires(_Arguments ... arguments) {
+	_Functor{}(arguments...);
+};
+
+template<typename T>
+concept IsByte = sizeof(T) == 1 && IsTrivial<std::remove_reference_t<T>>;
+
+template<typename T>
+concept IsByteChar = IsAnyOf<T, char, char8_t>;
+
+template<typename T>
+concept IsByteStringView = IsAnyOf<T, std::string_view, std::u8string_view>;
+
+template<typename T>
+concept IsByteString = IsAnyOf<T, std::string, std::u8string>;
+
+//---------------------------------------------------------
+
+/*
+	Used to invoke a lambda at the end of a scope.
+*/
 template<typename T> requires requires(T callable) { callable(); }
 class [[nodiscard]] Cleanup {
 private:
@@ -133,6 +158,90 @@ public:
 
 	Cleanup(Cleanup const&) = delete;
 	auto operator=(Cleanup const&) -> Cleanup& = delete;
+};
+
+//---------------------------------------------------------
+
+/*
+	Similar to std::unique_ptr except that non-pointer types can be held
+	and that a custom deleter must be specified. 
+
+	This is useful for OS handles that are integer types, for example a native socket handle.
+	Use C++20 lambdas in unevaluated contexts to specify a deleter, or use an already defined 
+	functor type. 
+	
+	Example:
+	using DllHandle = utils::UniqueHandle<HMODULE, decltype([](auto& h){FreeLibrary(h);})>;
+*/
+template<IsTrivial _Type, IsFunctorInvocable<_Type> _Deleter, _Type invalid_handle = _Type{}>
+class UniqueHandle {
+	_Type _handle{invalid_handle};
+
+	auto close() -> void {
+		if (_handle != invalid_handle) {
+			_Deleter{}(_handle);
+			_handle = invalid_handle;
+		}
+	}
+public:
+	explicit operator _Type() const {
+		return _handle;
+	}
+	auto get() const -> _Type {
+		return _handle;
+	}
+	auto get() -> _Type& {
+		return _handle;
+	}
+
+	auto operator->() const -> _Type const* {
+		return &_handle;
+	}
+	auto operator->() -> _Type* {
+		return &_handle;
+	}
+
+	auto operator&() const -> _Type const* {
+		return &_handle;
+	}
+	auto operator&() -> _Type* {
+		return &_handle;
+	}
+
+	explicit operator bool() const {
+		return _handle != invalid_handle;
+	}
+	auto operator!() const -> bool {
+		return _handle == invalid_handle;
+	}
+
+	explicit UniqueHandle(_Type handle) :
+		_handle{handle}
+	{}
+	auto operator=(_Type handle) -> UniqueHandle& {
+		close();
+		_handle = handle;
+		return *this;
+	}
+
+	UniqueHandle() = default;
+	~UniqueHandle() {
+		close();
+	}
+
+	UniqueHandle(UniqueHandle&& handle) noexcept :
+		_handle{handle._handle}
+	{
+		handle._handle = invalid_handle;
+	}
+	auto operator=(UniqueHandle&& handle) noexcept -> UniqueHandle& {
+		_handle = handle._handle;
+		handle._handle = invalid_handle;
+		return *this;
+	}
+
+	UniqueHandle(UniqueHandle const&) = delete;
+	auto operator=(UniqueHandle const&) -> UniqueHandle& = delete;
 };
 
 //---------------------------------------------------------
@@ -167,28 +276,6 @@ inline auto panic(std::string_view const message) -> void {
 	std::cerr << message << '\n';
 	std::exit(1);
 }
-
-//---------------------------------------------------------
-
-template<typename T>
-concept IsTrivial = std::is_trivial_v<T>;
-
-template<typename _Functor, typename ... _Arguments>
-concept IsFunctorInvocable = requires(_Arguments ... arguments) {
-	_Functor{}(arguments...);
-};
-
-template<typename T>
-concept IsByte = sizeof(T) == 1 && IsTrivial<std::remove_reference_t<T>>;
-
-template<typename T>
-concept IsByteChar = IsAnyOf<T, char, char8_t>;
-
-template<typename T>
-concept IsByteStringView = IsAnyOf<T, std::string_view, std::u8string_view>;
-
-template<typename T>
-concept IsByteString = IsAnyOf<T, std::string, std::u8string>;
 
 //---------------------------------------------------------
 
@@ -285,6 +372,9 @@ inline auto range_to_string(_Range const& range) -> _String {
 	return result;
 }
 
+/*
+	Reinterprets a span of any byte-sized trivial type as a string view of a specified byte-sized character type.
+*/
 template<
 	IsByteChar _Char, 
 	IsByte _Byte, 
@@ -294,7 +384,9 @@ template<
 auto data_to_string(std::span<_Byte> const data) -> _String {
 	return _String{reinterpret_cast<_Char const*>(data.data()), data.size()};
 }
-
+/*
+	Reinterprets a string view of any byte-sized character type as a span of any byte-sized trivial type.
+*/
 template<IsByte _Byte>
 [[nodiscard]]
 auto string_to_data(IsByteStringView auto const string) -> std::span<_Byte const> {
@@ -317,7 +409,10 @@ auto append_to_vector(std::vector<T>& vector, std::span<T const> const data) -> 
 template<typename T>
 concept IsByteData = IsByte<T> || std::ranges::range<T> && IsByte<std::ranges::range_value_t<T>>;
 
-template<IsByteData T> 
+/*
+	Returns the size of any trivial byte-sized element or range of trivial byte-sized elements.
+*/
+template<IsByteData T>
 [[nodiscard]]
 auto size_of_byte_data(T&& data) -> std::size_t {
 	if constexpr (requires{ std::size(data); }) {
@@ -406,10 +501,16 @@ constexpr auto find_if(_Range&& range, _Predicate&& predicate) noexcept
 	else return pos;
 }
 
+/*
+	Transforms a range of chars into its lowercase equivalent.
+*/
 constexpr auto ascii_lowercase_transform = std::views::transform([](char c) { 
 	return static_cast<char>(std::tolower(c));
 });
 
+/*
+	Returns whether lhs and rhs are equal, regardless of casing, assuming both are encoded in ASCII.
+*/
 [[nodiscard]]
 constexpr auto equal_ascii_case_insensitive(std::string_view const lhs, std::string_view const rhs) noexcept -> bool {
 	return std::ranges::equal(lhs | ascii_lowercase_transform, rhs | ascii_lowercase_transform);
@@ -417,11 +518,18 @@ constexpr auto equal_ascii_case_insensitive(std::string_view const lhs, std::str
 
 //---------------------------------------------------------
 
+/*
+	Returns the port that corresponds to the specified protocol.
+*/
 [[nodiscard]]
 constexpr auto get_port(Protocol protocol) noexcept -> Port {
 	return static_cast<Port>(protocol);
 }
 
+/*
+	Returns the protocol that corresponds to the specified case-insensitive string.
+	For example, "http" converts to Protocol::Http.
+*/
 template<IsByteStringView _StringView>
 [[nodiscard]]
 auto get_protocol_from_string(_StringView const protocol_string) noexcept 
@@ -520,6 +628,9 @@ constexpr auto extract_filename(_StringView const url)
 	return {};
 }
 
+/*
+	Returns whether character is allowed in a URI-encoded string or not.
+*/
 [[nodiscard]]
 constexpr auto get_is_allowed_uri_character(char const character) noexcept -> bool {
 	constexpr auto other_characters = std::string_view{"%-._~:/?#[]@!$&'()*+,;="};
@@ -530,6 +641,9 @@ constexpr auto get_is_allowed_uri_character(char const character) noexcept -> bo
 		other_characters.find(character) != std::string_view::npos;
 }
 
+/*
+	Returns the URI-encoded equivalent of uri.
+*/
 template<
 	IsByteStringView _StringView, 
 	typename _Char = _StringView::value_type, 
@@ -884,7 +998,7 @@ namespace algorithms {
 inline auto parse_status_line(std::string_view const line) -> StatusLine {
 	auto status_line = StatusLine{};
 
-	auto cursor = size_t{};
+	auto cursor = std::size_t{};
 	
 	if (auto const http_version_end = line.find(' '); http_version_end != std::string_view::npos)
 	{
@@ -1583,6 +1697,9 @@ inline auto receive_response(Socket const&& socket, std::u8string&& url, Respons
 
 //---------------------------------------------------------
 
+/*
+	Enumeration of the different HTTP request methods that can be used.
+*/
 enum class RequestMethod {
 	Connect,
 	Delete,
@@ -1595,8 +1712,12 @@ enum class RequestMethod {
 	Trace,
 };
 
+/*
+	Converts a RequestMethod to its uppercase string equivalent.
+	For example, RequestMethod::Get becomes std::string_view{"GET"}.
+*/
 [[nodiscard]]
-inline auto request_method_to_string(RequestMethod method) -> std::string_view {
+inline auto request_method_to_string(RequestMethod const method) -> std::string_view {
 	// TODO: Use using enum declarations when supported by gcc.
 	// using enum RequestMethod;
 	switch (method) {
@@ -1688,6 +1809,9 @@ private:
 	utils::DataVector _body;
 
 public:
+	/*
+		Sets the content of the request as a sequence of bytes.
+	*/
 	template<utils::IsByte _Byte>
 	[[nodiscard]]
 	auto set_body(std::span<_Byte const> const body_data) && -> Request&& {
@@ -1700,10 +1824,16 @@ public:
 		}
 		return std::move(*this);
 	}
+	/*
+		Sets the content of the request as a string view.
+	*/
 	[[nodiscard]]
 	auto set_body(std::string_view const body_data) && -> Request&& {
 		return std::move(*this).set_body(utils::string_to_data<std::byte>(body_data));
 	}
+	/*
+		Sets the content of the request as a UTF-8 string view.
+	*/
 	[[nodiscard]]
 	auto set_body(std::u8string_view const body_data) && -> Request&& {
 		return std::move(*this).set_body(utils::string_to_data<std::byte>(body_data));
@@ -1745,7 +1875,6 @@ private:
 		auto socket = open_socket(_split_url.domain_name, utils::get_port(_split_url.protocol));
 		
 		using namespace std::string_view_literals;
-		using namespace std::string_literals;
 
 		if (!_body.empty()) {
 			// TODO: Use std::format when available
@@ -1769,10 +1898,12 @@ private:
 	}
 
 public:
+	// Note: send and send_async are not [[nodiscard]] because callbacks 
+	// could potentially be used exclusively to handle the response.
+
 	/*
 		Sends the request and blocks until the response has been received.
 	*/
-	[[nodiscard]]
 	auto send() && -> Response {
 		return algorithms::receive_response(send_and_get_receive_socket(), std::move(_url), std::move(_callbacks));
 	}
