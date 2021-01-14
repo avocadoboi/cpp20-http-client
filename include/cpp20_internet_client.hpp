@@ -77,7 +77,7 @@ enum class Protocol : Port {
 };
 
 /*
-	This is everything that doesn't have anything to do with http specifically, 
+	This is everything that doesn't have anything to do with the core functionality, 
 	but are utilities that are used within the library.
 */
 namespace utils {
@@ -485,7 +485,7 @@ auto string_to_integral(IsByteStringView auto const string, int const base = 10)
 template<
 	std::ranges::range _Range, 
 	typename _Iterator = std::ranges::iterator_t<_Range>,
-    typename _Value = std::ranges::range_value_t<_Range>,
+	typename _Value = std::ranges::range_value_t<_Range>,
 	std::predicate<_Value> _Predicate
 >
 [[nodiscard]]
