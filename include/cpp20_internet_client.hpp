@@ -1,7 +1,7 @@
 /*
 MIT License
 
-Copyright (c) 2020 Björn Sundin
+Copyright (c) 2021 Björn Sundin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -1337,7 +1337,7 @@ private:
 	static constexpr auto newline = std::string_view{"\r\n"};
 
 	utils::DataVector _result;
-	bool _has_returned_result = false;
+	bool _has_returned_result{false};
 
 	std::size_t _chunk_size_left;
 
@@ -1369,7 +1369,7 @@ private:
 	}
 
 	std::string _chunk_size_string_buffer;
-	bool _is_finished = false;
+	bool _is_finished{false};
 
 	[[nodiscard]]
 	auto parse_chunk_separator_part(std::span<std::byte const> const new_data) -> std::size_t {
@@ -1463,7 +1463,7 @@ private:
 	std::optional<ResponseCallbacks*> _callbacks;
 
 	ParsedResponse _result;
-	bool _is_done = false;
+	bool _is_done{false};
 
 	auto finish() -> void {
 		_is_done = true;

@@ -1,7 +1,7 @@
 /*
 MIT License
 
-Copyright (c) 2020 Björn Sundin
+Copyright (c) 2021 Björn Sundin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -241,7 +241,7 @@ auto throw_connection_error(std::string reason, int const error_code = errno, bo
 
 class WinSockLifetime {
 private:
-	bool _is_moved = false;
+	bool _is_moved{false};
 
 public:
 	WinSockLifetime() {
@@ -351,7 +351,7 @@ private:
 		return socket_handle;
 	}
 
-	bool _is_nonblocking = false;
+	bool _is_nonblocking{false};
 
 public:
 	auto set_is_nonblocking(bool const p_is_nonblocking) -> void {
@@ -367,7 +367,7 @@ public:
 	}
 
 private:
-	bool _is_closed = false;
+	bool _is_closed{false};
 	
 	auto reconnect() -> void {
 		_handle = create_handle();
@@ -598,7 +598,7 @@ public:
 struct SchannelConnectionInitializer {
 	using CredentialsHandle = utils::UniqueHandle<CredHandle, decltype([](auto& h){sspi_library.functions->FreeCredentialHandle(&h);})>;
 
-	CredentialsHandle _credentials = aquire_credentials_handle();
+	CredentialsHandle _credentials{aquire_credentials_handle()};
 
 	[[nodiscard]]
 	static auto aquire_credentials_handle() -> CredentialsHandle {
@@ -630,7 +630,7 @@ struct SchannelConnectionInitializer {
 	std::wstring _server_name;
 
 	SecurityContextHandle _security_context;
-	TlsMessageReceiveBuffer _receive_buffer = TlsMessageReceiveBuffer::allocate_new();
+	TlsMessageReceiveBuffer _receive_buffer{TlsMessageReceiveBuffer::allocate_new()};
 	
 	/*
 		Returns a span over the total read data.
@@ -1062,7 +1062,7 @@ private:
 		return socket_handle;
 	}
 
-	bool _is_nonblocking = false;
+	bool _is_nonblocking{false};
 
 public:
 	auto make_nonblocking() -> void {
@@ -1089,7 +1089,7 @@ public:
 	}
 	
 private:
-	bool _is_closed = false;
+	bool _is_closed{false};
 
 public:
 	auto reconnect() -> void {
@@ -1236,7 +1236,7 @@ class TlsSocket {
 		connect();
 	}
 
-	bool _is_closed = false;
+	bool _is_closed{false};
 
 	auto ensure_connected() -> void {
 		if (_is_closed) {
