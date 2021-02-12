@@ -17,6 +17,7 @@ As of now, only GCC supports all of the C++20 features used in this library. Add
 * Support for Windows, Linux and MacOS.
 * Free from warnings with all useful warning flags turned on.
 * Modern CMake integration.
+* UTF-8 support.
 
 ## Simple "GET" request example
 Note that the fmt library is not a dependency of this library, it's just to simplify the example.
