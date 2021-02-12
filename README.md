@@ -28,13 +28,13 @@ See the **examples** directory for more examples.
 
 using namespace internet_client;
 
-auto main() -> int {
+int main() {
     try {
         auto const response = http::get("https://www.google.com")
             .add_header({.name="HeaderName", .value="header value"})
             .send();
         fmt::print("Date from server: {}.\n", response.get_header_value("date").value_or("Unknown"));
-        response.write_body_to_file("index.html");
+        utils::write_to_file(response.get_body(), std::string{filename});
     } 
     catch (errors::ConnectionFailed const& error) {
         fmt::print("The connection failed - \"{}\"\n", error.what());

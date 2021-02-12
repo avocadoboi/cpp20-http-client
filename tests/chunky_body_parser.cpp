@@ -1,7 +1,6 @@
 #include "testing_header.hpp"
 
-auto test_chunky_body_parser(std::string_view const chunky_body, std::string_view const expected_result) 
-    -> void 
+void test_chunky_body_parser(std::string_view const chunky_body, std::string_view const expected_result) 
 {
     auto const chunky_body_data = utils::string_to_data<std::byte>(chunky_body);
     for (auto const packet_size : {1, 8, 32, 128, 512, 2048})
@@ -12,7 +11,7 @@ auto test_chunky_body_parser(std::string_view const chunky_body, std::string_vie
         {
             auto const new_data_end = std::min(chunky_body_data.begin() + pos + packet_size, chunky_body_data.end());
             if (auto const result = parser.parse_new_data(std::span{chunky_body_data.begin() + pos, new_data_end})) {
-                CHECK(utils::data_to_string<char>(std::span{*result}) == expected_result);
+                CHECK(utils::data_to_string(std::span{*result}) == expected_result);
                 break;
             }
         }

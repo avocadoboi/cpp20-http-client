@@ -1,7 +1,6 @@
 #include "testing_header.hpp"
 
-auto test_response_parser(std::string_view const input, http::algorithms::ParsedResponse const& expected_result) 
-	-> void 
+void test_response_parser(std::string_view const input, http::algorithms::ParsedResponse const& expected_result) 
 {
 	auto const response_data = utils::string_to_data<std::byte>(input);
 
@@ -23,7 +22,7 @@ auto test_response_parser(std::string_view const input, http::algorithms::Parsed
 	}
 }
 
-auto string_to_data_vector(std::string_view const string) -> utils::DataVector {
+utils::DataVector string_to_data_vector(std::string_view const string) {
 	auto const data = utils::string_to_data<std::byte>(string);
 	return utils::DataVector(data.begin(), data.end());
 }

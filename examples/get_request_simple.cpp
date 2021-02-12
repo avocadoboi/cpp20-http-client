@@ -2,7 +2,7 @@
 
 using namespace internet_client;
 
-auto main() -> int {
+int main() {
     auto url = std::string{};
     std::cout << "Please enter a URL: ";
     std::cin >> url;
@@ -25,7 +25,7 @@ auto main() -> int {
             }
         }
         else {
-            std::cout << "\nBody:\n" << response.get_body_string<char>() << '\n';
+            std::cout << "\nBody:\n" << response.get_body_string() << '\n';
         }
         break;
     }
