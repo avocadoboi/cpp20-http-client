@@ -26,15 +26,15 @@ See the **examples** directory for more examples.
 #include <cpp20_internet_client.hpp>
 #include <fmt/format.h>
 
-using namespace internet_client;
-
 int main() {
+    using namespace internet_client;
+
     try {
         auto const response = http::get("https://www.google.com")
             .add_header({.name="HeaderName", .value="header value"})
             .send();
         fmt::print("Date from server: {}.\n", response.get_header_value("date").value_or("Unknown"));
-        utils::write_to_file(response.get_body(), std::string{filename});
+        utils::write_to_file(response.get_body(), "index.html");
     } 
     catch (errors::ConnectionFailed const& error) {
         fmt::print("The connection failed - \"{}\"\n", error.what());

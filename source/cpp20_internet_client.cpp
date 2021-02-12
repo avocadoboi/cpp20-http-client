@@ -90,28 +90,6 @@ void enable_utf8_console() {
 namespace win {
 
 [[nodiscard]]
-std::string get_error_message(DWORD const message_id) {
-    auto buffer = static_cast<char*>(nullptr);
-
-    [[maybe_unused]]
-    auto const buffer_cleanup = Cleanup{[&]{LocalFree(buffer);}};
-
-    auto const size = FormatMessageA(
-        FORMAT_MESSAGE_FROM_SYSTEM | 
-        FORMAT_MESSAGE_IGNORE_INSERTS | 
-        FORMAT_MESSAGE_ALLOCATE_BUFFER,
-        nullptr,
-        message_id,
-        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-        reinterpret_cast<LPSTR>(&buffer),
-        1,
-        nullptr
-    );
-
-    return std::string(buffer, size);
-}
-
-[[nodiscard]]
 std::wstring utf8_to_wide(std::string_view const input) {
 	auto result = std::wstring(MultiByteToWideChar(
 		CP_UTF8, 0,
@@ -169,6 +147,28 @@ void wide_to_utf8(std::wstring_view const input, std::span<char> const output) {
 	if (length > 0) {
 		output[length] = 0;
 	}
+}
+
+[[nodiscard]]
+std::string get_error_message(DWORD const message_id) {
+    auto buffer = static_cast<wchar_t*>(nullptr);
+
+    [[maybe_unused]]
+    auto const buffer_cleanup = Cleanup{[&]{LocalFree(buffer);}};
+
+    auto const size = FormatMessageW(
+        FORMAT_MESSAGE_FROM_SYSTEM | 
+        FORMAT_MESSAGE_IGNORE_INSERTS | 
+        FORMAT_MESSAGE_ALLOCATE_BUFFER,
+        nullptr,
+        message_id,
+        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        reinterpret_cast<LPWSTR>(&buffer),
+        1,
+        nullptr
+    );
+
+    return wide_to_utf8(std::wstring_view{buffer, size});
 }
 
 } // namespace win
@@ -369,7 +369,7 @@ private:
 				continue;
 			}
 			else throw errors::ConnectionFailed{
-				std::string("Failed to get address info for socket creation: ") + gai_strerror(result)
+				std::string("Failed to get address info for socket creation: ") + utils::win::get_error_message(result)//gai_strerror(result)
 			};
 		}
 
