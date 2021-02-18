@@ -115,11 +115,6 @@ constexpr auto select_on_type(U&& first_item, V&& ... items) noexcept -> auto&& 
 template<typename T>
 concept IsTrivial = std::is_trivial_v<T>;
 
-template<typename _Functor, typename ... _Arguments>
-concept IsFunctorInvocable = requires(_Arguments ... arguments) {
-	_Functor{}(arguments...);
-};
-
 template<typename T>
 concept IsByte = sizeof(T) == 1 && IsTrivial<std::remove_reference_t<T>>;
 
@@ -137,7 +132,7 @@ concept IsByteString = IsAnyOf<T, std::string, std::u8string>;
 /*
 	Used to invoke a lambda at the end of a scope.
 */
-template<typename T> requires requires(T callable) { callable(); }
+template<std::invocable T>
 class [[nodiscard]] Cleanup {
 private:
 	T _callable;
@@ -173,7 +168,7 @@ public:
 	Example:
 	using DllHandle = utils::UniqueHandle<HMODULE, decltype([](auto& h){FreeLibrary(h);})>;
 */
-template<IsTrivial _Type, IsFunctorInvocable<_Type> _Deleter, _Type invalid_handle = _Type{}>
+template<IsTrivial _Type, std::invocable<_Type> _Deleter, _Type invalid_handle = _Type{}>
 class UniqueHandle {
 	_Type _handle{invalid_handle};
 
@@ -184,33 +179,42 @@ class UniqueHandle {
 		}
 	}
 public:
+	[[nodiscard]]
 	explicit operator _Type() const {
 		return _handle;
 	}
+	[[nodiscard]]
 	auto get() const -> _Type {
 		return _handle;
 	}
+	[[nodiscard]]
 	auto get() -> _Type& {
 		return _handle;
 	}
 
+	[[nodiscard]]
 	auto operator->() const -> _Type const* {
 		return &_handle;
 	}
+	[[nodiscard]]
 	auto operator->() -> _Type* {
 		return &_handle;
 	}
 
+	[[nodiscard]]
 	auto operator&() const -> _Type const* {
 		return &_handle;
 	}
+	[[nodiscard]]
 	auto operator&() -> _Type* {
 		return &_handle;
 	}
 
+	[[nodiscard]]
 	explicit operator bool() const {
 		return _handle != invalid_handle;
 	}
+	[[nodiscard]]
 	auto operator!() const -> bool {
 		return _handle == invalid_handle;
 	}
