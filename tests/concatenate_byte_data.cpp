@@ -9,7 +9,7 @@ TEST_CASE("utils::concatenate_byte_data with different types of byte data.") {
         std::array{'o', 'w', 'n', ' '},
         "function called "sv, '\"', u8"concatenate_byte_data"sv, std::byte{'\"'}, std::byte{'.'},
         std::vector{' ', 'S', 'o', 'm', 'e', ' '},
-        u8"numbers: "sv,
+        "numbers: "sv,
         std::array{std::byte{0x5}, std::byte{0x9}, std::byte{0xA1}, std::byte{0xFB}, std::byte{'.'}}
     );
     CHECK(std::ranges::equal(expected_result, result));

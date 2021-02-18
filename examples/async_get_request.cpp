@@ -4,7 +4,7 @@ using namespace internet_client;
 
 using namespace std::chrono_literals;
 
-auto main() -> int {
+int main() {
     auto response = http::get("https://www.youtube.com")
         .set_raw_progress_callback([](http::ResponseProgressRaw& progress) {
             std::cout << "Got " << progress.data.size() << " bytes so far.\n";

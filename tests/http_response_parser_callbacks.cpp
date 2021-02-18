@@ -60,11 +60,11 @@ constexpr auto header_body_separator = "\r\n\r\n"sv;
 
 constexpr auto chunk_sizes_to_test = std::array<std::size_t, 5>{1, 8, 32, 128, 512};
 
-auto test_callbacks_full_input(
+void test_callbacks_full_input(
 	std::string_view const headers_string,
 	std::vector<http::Header> const& headers,
 	std::string_view const body_string
-) -> void {
+) {
 	auto const input_string = (std::string{headers_string} += header_body_separator) += body_string;
 
 	auto const expected_body_data = utils::string_to_data<std::byte const>(identity_body_string);
@@ -117,11 +117,11 @@ TEST_CASE("Response parser with callbacks and identity transfer, full input") {
 	test_callbacks_full_input(headers_string_identity_transfer, headers_identity_transfer, identity_body_string);
 }
 
-auto test_callbacks_stopping_after_head(
+void test_callbacks_stopping_after_head(
 	std::string_view const headers_string, 
 	std::vector<http::Header> const& headers, 
 	std::string_view const body_string
-) -> void {
+) {
 	auto input_string = (std::string{headers_string} += header_body_separator) += body_string;
 
 	auto const expected_result = http::algorithms::ParsedResponse{

@@ -5,7 +5,7 @@
 	You'll have to implement the protocol if it's not http.
 */
 
-auto main() -> int {
+int main() {
 	// If port 443 is used, the data is automatically sent and received over TLS.
 	// If another port is used that you want to use TLS encryption on you can pass an additional true paramter.
 	auto socket = internet_client::open_socket("wss://something", internet_client::Port{443});
@@ -30,7 +30,7 @@ auto main() -> int {
 	// continues until we reached the end of our expected data.
 
 	// Or any contiguous range of std::byte
-	socket.write(std::string_view{"Some response data"});
+	socket.write("Some response data");
 
 	// etc...
 

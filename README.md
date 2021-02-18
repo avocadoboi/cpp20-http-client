@@ -17,6 +17,7 @@ As of now, only GCC supports all of the C++20 features used in this library. Add
 * Support for Windows, Linux and MacOS.
 * Free from warnings with all useful warning flags turned on.
 * Modern CMake integration.
+* UTF-8 support.
 
 ## Simple "GET" request example
 Note that the fmt library is not a dependency of this library, it's just to simplify the example.
@@ -26,15 +27,15 @@ See the **examples** directory for more examples.
 #include <cpp20_internet_client.hpp>
 #include <fmt/format.h>
 
-using namespace internet_client;
+int main() {
+    using namespace internet_client;
 
-auto main() -> int {
     try {
         auto const response = http::get("https://www.google.com")
             .add_header({.name="HeaderName", .value="header value"})
             .send();
         fmt::print("Date from server: {}.\n", response.get_header_value("date").value_or("Unknown"));
-        response.write_body_to_file("index.html");
+        utils::write_to_file(response.get_body(), "index.html");
     } 
     catch (errors::ConnectionFailed const& error) {
         fmt::print("The connection failed - \"{}\"\n", error.what());
@@ -43,7 +44,7 @@ auto main() -> int {
 ```
 
 ## Dependencies
-The only non-native dependency is OpenSSL on UNIX operating systems. It is recommended to use a package manager like VCPKG to install the OpenSSL libraries, especially on MacOS.  
+The only non-native dependency is OpenSSL on Linux and MacOS. It is recommended to use a package manager like VCPKG to install the OpenSSL libraries, especially on MacOS.  
 ## Building and installing using CMake
 You can download, build and install the library as shown below. You only need to do it like this if you want to use the library as an installation as explained later. The information about cmake flags can be useful even if you use the library as a subproject.
 ```shell
@@ -54,7 +55,7 @@ cmake . -B build
 cmake --build build --target cpp20_internet_client
 sudo cmake --install build
 ```
-You may want to add some flags to the cmake commands, for example the VCPKG toolchain file or a cmake prefix path for OpenSSL on UNIX systems. Make sure a compiler is used that supports all of the C++20 features used in the library. For a safe bet, use the latest GCC compiler. On Windows, use for example -G"MinGW Makefiles" or -G"Ninja" instead of the (probably) default visual studio generator if you want to use GCC. Run the command prompt as administrator and remove "sudo" in the last command if you are on Windows.
+You may want to add some flags to the cmake commands, for example the VCPKG toolchain file or a cmake prefix path for OpenSSL on Linux and MacOS. Make sure a compiler is used that supports all of the C++20 features used in the library. For a safe bet, use the latest GCC compiler. On Windows, use for example -G"MinGW Makefiles" or -G"Ninja" instead of the (probably) default visual studio generator if you want to use GCC. Run the command prompt as administrator and remove "sudo" in the last command if you are on Windows.
 
 ## Usage with CMake
 The library exports the target ``Cpp20InternetClient::cpp20_internet_client``. Cpp20InternetClient is the name of the package namespace. There are several ways to include the library in a project.

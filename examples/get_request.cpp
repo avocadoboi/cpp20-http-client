@@ -3,7 +3,7 @@
 using namespace internet_client;
 using namespace std::string_view_literals;
 
-auto read_url() -> std::string {
+std::string read_url() {
 	std::cout << "Please enter a url: ";
 	
 	auto url = std::string{};
@@ -14,7 +14,7 @@ auto read_url() -> std::string {
 	return url;	
 }
 
-auto send_request(std::string_view const url) -> http::Response {
+http::Response send_request(std::string_view const url) {
 	return http::get(url)
 		.add_header({.name="One", .value="aaa"}) // http::Header struct.
 		.add_headers("Two: bbb") // Can be multiple lines for more than one header.
@@ -28,7 +28,7 @@ auto send_request(std::string_view const url) -> http::Response {
 		}).send();
 }
 
-auto use_response(http::Response const& response) -> void {
+void use_response(http::Response const& response) {
 	auto const response_headers = response.get_headers_string();
 	std::cout << "Response headers below.\n\n" << response_headers << "\n\n";
 
@@ -46,7 +46,7 @@ auto use_response(http::Response const& response) -> void {
 		std::cout << "No content-type header.\n";
 	}
 
-	auto const url = response.get_url<char>();
+	auto const url = response.get_url();
 
 	auto const filename = [&]{
 		if (auto const filename = utils::extract_filename(url); filename.empty()) {
@@ -58,10 +58,10 @@ auto use_response(http::Response const& response) -> void {
 	}();
 
 	std::cout << "Writing body to file with name: " << filename << '\n';
-	response.write_body_to_file(std::string{filename});
+	utils::write_to_file(response.get_body(), std::string{filename});
 }
 
-auto do_request() -> http::Response {
+http::Response do_request() {
 	auto url = read_url();
 
 	while (true) {
@@ -81,7 +81,7 @@ auto do_request() -> http::Response {
 	}
 }
 
-auto main() -> int {
+int main() {
 	try {
 		auto const response = do_request();
 		use_response(response);
