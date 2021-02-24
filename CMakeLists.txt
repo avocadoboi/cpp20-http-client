@@ -65,6 +65,7 @@ add_subdirectory(examples)
 include(CMakePackageConfigHelpers)
 
 # Create a file that contains information about package versioning.
+# It will be placed in CMAKE_CURRENT_BINARY_DIR.
 write_basic_package_version_file(
 	${PROJECT_NAME}ConfigVersion.cmake
 	VERSION ${PROJECT_VERSION}
