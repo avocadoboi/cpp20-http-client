@@ -614,7 +614,7 @@ private:
 	using CredentialsHandle = utils::UniqueHandle<CredHandle, decltype([](auto& h){sspi_library.functions->FreeCredentialHandle(&h);})>;
 
 	using HandshakeOutputBuffer = utils::UniqueHandle<
-		SecBuffer, decltype([](auto const& buffer){
+		SecBuffer, decltype([](auto const& buffer) {
 			if (buffer.pvBuffer) {
 				sspi_library.functions->FreeContextBuffer(buffer.pvBuffer);
 			}
@@ -978,7 +978,7 @@ using PosixSocketHandle = int;
 
 using SocketHandle = utils::UniqueHandle<
 	PosixSocketHandle, 
-	decltype([](auto const handle){
+	decltype([](auto const handle) {
 		if (::shutdown(handle, SHUT_RDWR) == -1) {
 			utils::throw_connection_error("Failed to shut down socket connection");
 		}

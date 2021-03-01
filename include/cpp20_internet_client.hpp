@@ -103,9 +103,6 @@ concept IsByte = sizeof(T) == 1 && IsTrivial<std::remove_reference_t<T>>;
 */
 template<std::invocable T>
 class [[nodiscard]] Cleanup {
-private:
-	T _callable;
-	
 public:
 	[[nodiscard]] 
 	Cleanup(T&& callable) :
@@ -122,6 +119,9 @@ public:
 
 	Cleanup(Cleanup const&) = delete;
 	Cleanup& operator=(Cleanup const&) = delete;
+	
+private:
+	T _callable;
 };
 
 //---------------------------------------------------------
@@ -260,10 +260,10 @@ inline void panic(std::string_view const message) {
 //---------------------------------------------------------
 
 template<typename _Range, typename _ValueType>
-concept IsRangeOf = std::ranges::range<_Range> && std::same_as<std::ranges::range_value_t<_Range>, _ValueType>;
+concept IsInputRangeOf = std::ranges::input_range<_Range> && std::same_as<std::ranges::range_value_t<_Range>, _ValueType>;
 
 template<typename _Range, typename _ValueType>
-concept IsSizedRangeOf = std::ranges::sized_range<_Range> && std::same_as<std::ranges::range_value_t<_Range>, _ValueType>;
+concept IsSizedRangeOf = IsInputRangeOf<_Range, _ValueType> && std::ranges::sized_range<_Range>;
 
 /*
 	Converts a range of contiguous characters to a std::basic_string_view.
@@ -274,7 +274,7 @@ template<
 		The ranges unfortunately are not std::ranges::contiguous_range
 		even when the base type is contiguous, so we can't use that constraint.
 	*/
-	IsRangeOf<char> _Range
+	IsInputRangeOf<char> _Range
 > 
 [[nodiscard]] 
 constexpr std::string_view range_to_string_view(_Range const& range) {
@@ -304,7 +304,7 @@ inline std::string range_to_string(_Range const& range) {
 /*
 	Copies a range of unknown size to a std::basic_string of any type.
 */
-template<IsRangeOf<char> _Range> 
+template<IsInputRangeOf<char> _Range> 
 [[nodiscard]]
 inline std::string range_to_string(_Range const& range) {
 	auto result = std::string();
@@ -947,13 +947,14 @@ inline std::vector<Header> parse_headers_string(std::string_view const headers)
 	return result;
 }
 
+template<std::ranges::input_range _Range, IsHeader _Header = std::ranges::range_value_t<_Range>>
 [[nodiscard]]
-inline Header const* find_header_by_name(std::span<Header const> const headers, std::string_view const name) 
+inline _Header const* find_header_by_name(_Range const& headers, std::string_view const name) 
 {
 	auto const lowercase_name_to_search = utils::range_to_string(
 		name | utils::ascii_lowercase_transform
 	);
-	auto const pos = std::ranges::find_if(headers, [&](Header const& header) {
+	auto const pos = std::ranges::find_if(headers, [&](_Header const& header) {
 		return std::ranges::equal(lowercase_name_to_search, header.name | utils::ascii_lowercase_transform);
 	});
 	if (pos == std::ranges::end(headers)) {
@@ -1636,7 +1637,6 @@ public:
 		headers_string.reserve(headers.size()*128);
 		
 		for (auto const& header : headers) {
-			// TODO: Use std::format when it has been implemented by compilers.
 			(((headers_string += header.name) += ": ") += header.value) += "\r\n";
 		}
 		
@@ -1747,8 +1747,8 @@ private:
 
 		if (!_body.empty()) {
 			// TODO: Use std::format when available
-			((((_headers += "Transfer-Encoding: identity"sv) += "\r\n"sv) +=
-				"Content-Length: "sv) += std::to_string(_body.size())) += "\r\n"sv;
+			// _headers += std::format("Transfer-Encoding: identity\r\nContent-Length: {}\r\n", _body.size());
+			((_headers += "Transfer-Encoding: identity\r\nContent-Length: ") += std::to_string(_body.size())) += "\r\n";
 		}
 		
 		auto const request_data = utils::concatenate_byte_data(
