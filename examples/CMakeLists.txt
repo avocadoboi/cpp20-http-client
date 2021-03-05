@@ -14,6 +14,9 @@ target_link_libraries(example_post_request PRIVATE cpp20_internet_client)
 add_executable(example_socket socket.cpp)
 target_link_libraries(example_socket PRIVATE cpp20_internet_client)
 
+add_executable(example_async_simple async_simple.cpp)
+target_link_libraries(example_async_simple PRIVATE cpp20_internet_client)
+
 # Not a dependency, but for emergency debugging...
-# find_package(fmt CONFIG REQUIRED)
-# target_link_libraries(example_get_request_simple PRIVATE fmt::fmt-header-only)
+# find_package(fmt CONFIG)
+# target_link_libraries(example_async_simple PRIVATE fmt::fmt-header-only)

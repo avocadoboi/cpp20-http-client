@@ -21,7 +21,7 @@ int main() {
             // Don't continue with reading the body, stop after headers
             headers.stop();
         })
-        .send_async();
+        .send_async<1024>();
 
     // Do stuff that takes time here, while waiting for reponse...
     while (response.wait_for(20ms) != std::future_status::ready) {

@@ -358,17 +358,14 @@ private:
 		};
 		auto address_info = static_cast<addrinfoW*>(nullptr);
 
-		while (auto const result = GetAddrInfoW(
+		if (auto const result = GetAddrInfoW(
 				wide_server_name.data(), 
 				wide_port_string.data(), 
 				&hints, 
 				&address_info
 			)) 
 		{
-			if (result == EAI_AGAIN) {
-				continue;
-			}
-			else throw errors::ConnectionFailed{
+			throw errors::ConnectionFailed{
 				std::string("Failed to get address info for socket creation: ") + utils::win::get_error_message(result)//gai_strerror(result)
 			};
 		}
@@ -1083,17 +1080,14 @@ private:
 		};
 		auto address_info = static_cast<addrinfo*>(nullptr);
 
-		while (auto const result = ::getaddrinfo(
+		if (auto const result = ::getaddrinfo(
 				reinterpret_cast<char const*>(server.data()),
 				port_string.data(),
 				&hints, 
 				&address_info
 			))
 		{
-			if (result == EAI_AGAIN) {
-				continue;
-			}
-			else throw errors::ConnectionFailed{
+			throw errors::ConnectionFailed{
 				std::string("Failed to get address info for socket creation: ") + gai_strerror(result)
 			};
 		}

@@ -594,7 +594,7 @@ public:
 		return _is_tls_failure;
 	}
 
-	ConnectionFailed(std::string reason, bool const is_tls_failure = false) :
+	ConnectionFailed(std::string reason, bool const is_tls_failure = false) noexcept :
 		_reason(std::move(reason)),
 		_is_tls_failure{is_tls_failure}
 	{}
@@ -692,10 +692,9 @@ public:
 		of the data that was read or a ConnectionClosed value if the peer 
 		closed the connection.
 	*/
+	template<std::size_t read_buffer_size = 512>
 	[[nodiscard]]
 	std::variant<ConnectionClosed, utils::DataVector> read_available() const {
-		constexpr auto read_buffer_size = 512;
-
 		auto buffer = utils::DataVector(read_buffer_size);
 		auto read_offset = std::size_t{};
 
@@ -1529,6 +1528,7 @@ private:
 	std::optional<ResponseCallbacks*> _callbacks;
 };
 
+template<std::size_t buffer_size = std::size_t{1} << 12>
 [[nodiscard]]
 inline Response receive_response(Socket const&& socket, std::string&& url, ResponseCallbacks&& callbacks) {
 	auto has_stopped = false;
@@ -1536,7 +1536,6 @@ inline Response receive_response(Socket const&& socket, std::string&& url, Respo
 	
 	auto response_parser = algorithms::ResponseParser{callbacks};
 
-	constexpr auto buffer_size = std::size_t{1} << 12;
 	auto read_buffer = std::array<std::byte, buffer_size>();
 	
 	while (!has_stopped) {
@@ -1719,14 +1718,39 @@ public:
 		Sends the request and blocks until the response has been received.
 	*/
 	Response send() && {
-		return algorithms::receive_response(_send_and_get_receive_socket(), std::move(_url), std::move(_callbacks));
+		return algorithms::receive_response<>(_send_and_get_receive_socket(), std::move(_url), std::move(_callbacks));
+	}
+	/*
+		Sends the request and blocks until the response has been received.
+
+		The buffer_size template parameter specifies the size of the buffer that data
+		from the server is read into at a time. If it is small, then data will be received
+		in many times in smaller pieces, with some time cost. If it is big, then 
+		data will be read few times but in large pieces, with more memory cost.
+	*/
+	template<std::size_t buffer_size>
+	Response send() && {
+		return algorithms::receive_response<buffer_size>(_send_and_get_receive_socket(), std::move(_url), std::move(_callbacks));
 	}
 	/*
 		Sends the request and returns immediately after the data has been sent.
 		The returned future receives the response asynchronously.
 	*/
 	std::future<Response> send_async() && {
-		return std::async(&algorithms::receive_response, _send_and_get_receive_socket(), std::move(_url), std::move(_callbacks));
+		return std::async(&algorithms::receive_response<>, _send_and_get_receive_socket(), std::move(_url), std::move(_callbacks));
+	}
+	/*
+		Sends the request and returns immediately after the data has been sent.
+		The returned future receives the response asynchronously.
+
+		The buffer_size template parameter specifies the size of the buffer that data
+		from the server is read into at a time. If it is small, then data will be received
+		in many times in smaller pieces, with some time cost. If it is big, then 
+		data will be read few times but in large pieces, with more memory cost.
+	*/
+	template<std::size_t buffer_size>
+	std::future<Response> send_async() && {
+		return std::async(&algorithms::receive_response<buffer_size>, _send_and_get_receive_socket(), std::move(_url), std::move(_callbacks));
 	}
 
 	Request() = delete;
