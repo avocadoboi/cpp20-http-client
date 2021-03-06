@@ -787,10 +787,7 @@ concept IsHeader = utils::IsAnyOf<T, HeaderCopy, Header>;
 */
 [[nodiscard]]
 bool operator==(IsHeader auto const& lhs, IsHeader auto const& rhs) {
-	return std::ranges::equal(
-		lhs.name | utils::ascii_lowercase_transform, 
-		rhs.name | utils::ascii_lowercase_transform
-	) && lhs.value == rhs.value;
+	return utils::equal_ascii_case_insensitive(lhs.name, rhs.name) && lhs.value == rhs.value;
 }
 
 enum class StatusCode {

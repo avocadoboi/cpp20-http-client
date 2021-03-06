@@ -21,17 +21,13 @@ Last-Modified: tomorrow at 4 am
 )"
 	);
 	constexpr auto expected = std::array{
-		http::Header{.name="One", .value="aaa"},
-		http::Header{.name="Two", .value="bbbbbbb"},
-		http::Header{.name="Three", .value="ccccccc"},
-		http::Header{.name="Last-Modified", .value="tomorrow at 4 am"},
+		http::Header{.name="oNe", .value="aaa"},
+		http::Header{.name="TwO", .value="bbbbbbb"},
+		http::Header{.name="thRee", .value="ccccccc"},
+		http::Header{.name="last-modified", .value="tomorrow at 4 am"},
 	};
 
-	REQUIRE(headers.size() == expected.size());
-
-	for (auto i = std::size_t{}; i < headers.size(); ++i) {
-		CHECK(headers[i] == expected[i]);
-	}
+	CHECK(std::ranges::equal(headers, expected));
 }
 
 TEST_CASE("Trying parse_headers_string with multiple lines without any valid headers") {
