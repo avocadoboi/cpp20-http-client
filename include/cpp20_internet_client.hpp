@@ -268,21 +268,19 @@ concept IsSizedRangeOf = IsInputRangeOf<_Range, _ValueType> && std::ranges::size
 /*
 	Converts a range of contiguous characters to a std::basic_string_view.
 */
-template<
+constexpr auto range_to_string_view = []<
 	/* 
 		std::views::split returns a range of ranges.
 		The ranges unfortunately are not std::ranges::contiguous_range
 		even when the base type is contiguous, so we can't use that constraint.
 	*/
 	IsInputRangeOf<char> _Range
-> 
-[[nodiscard]] 
-constexpr std::string_view range_to_string_view(_Range const& range) {
-	return {
-		&*std::begin(range), 
+> (_Range&& range) {
+	return std::string_view{
+		&*std::ranges::begin(range), 
 		static_cast<std::string_view::size_type>(std::ranges::distance(range))
 	};
-}
+};
 
 //---------------------------------------------------------
 
@@ -297,7 +295,7 @@ template<IsSizedRangeOf<char> _Range>
 [[nodiscard]]
 inline std::string range_to_string(_Range const& range) {
 	auto result = std::string(range.size(), char{});
-	std::ranges::copy(range, std::begin(result));
+	std::ranges::copy(range, std::ranges::begin(result));
 	return result;
 }
 
@@ -421,6 +419,9 @@ void write_to_file(_DataRange const& data, std::string const& file_name) {
 }
 
 //---------------------------------------------------------
+
+constexpr auto filter_true = std::views::filter([](auto const& x){ return static_cast<bool>(x); });
+constexpr auto dereference = std::views::transform([](auto&& x) -> decltype(auto) { return *x; });
 
 /*
 	Transforms a range of chars into its lowercase equivalent.
@@ -787,7 +788,7 @@ concept IsHeader = utils::IsAnyOf<T, HeaderCopy, Header>;
 */
 [[nodiscard]]
 bool operator==(IsHeader auto const& lhs, IsHeader auto const& rhs) {
-	return utils::equal_ascii_case_insensitive(lhs.name, rhs.name) && lhs.value == rhs.value;
+	return lhs.value == rhs.value && utils::equal_ascii_case_insensitive(lhs.name, rhs.name);
 }
 
 enum class StatusCode {
@@ -901,44 +902,50 @@ inline StatusLine parse_status_line(std::string_view const line) {
 	return status_line;
 }
 
+[[nodiscard]]
+constexpr std::optional<Header> parse_header(std::string_view const line) {
+	/*
+		"An HTTP header consists of its case-insensitive name followed by a colon (:), 
+		then by its value. Whitespace before the value is ignored." 
+		(https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers)
+
+		So we're just ignoring whitespace before the value, and after because there may be
+		an \r there if the line endings are CRLF.
+	*/
+
+	auto const colon_pos = line.find(':');
+	if (colon_pos == std::string_view::npos) {
+		return {};
+	}
+	
+	constexpr auto whitespace_characters = std::string_view{" \t\r"};
+	
+	auto const value_start = line.find_first_not_of(whitespace_characters, colon_pos + 1);
+	if (value_start == std::string_view::npos) {
+		return {};
+	}
+	
+	// This will never be npos, assuming the header 
+	// string isn't mutated by some other thread.
+	auto const value_end = line.find_last_not_of(whitespace_characters);
+	
+	return Header{
+		.name = line.substr(0, colon_pos), 
+		.value = line.substr(value_start, value_end + 1 - value_start)
+	};
+}
+
 [[nodiscard]] 
 inline std::vector<Header> parse_headers_string(std::string_view const headers) 
 {
 	auto result = std::vector<Header>();
 
-	for (auto const line_range : std::views::split(headers, '\n')) {
-		auto const line = utils::range_to_string_view(line_range);
-	
-		/*
-			"An HTTP header consists of its case-insensitive name followed by a colon (:), 
-			then by its value. Whitespace before the value is ignored." 
-			(https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers)
-
-			So we're just ignoring whitespace before the value, and after because there may be
-			an \r there if the line endings are CRLF.
-		*/
-
-		auto const colon_pos = line.find(':');
-		if (colon_pos == std::string_view::npos) {
-			continue;
-		}
-		
-		constexpr auto whitespace_characters = std::string_view{" \t\r"};
-		
-		auto const value_start = line.find_first_not_of(whitespace_characters, colon_pos + 1);
-		if (value_start == std::string_view::npos) {
-			continue;
-		}
-		
-		// This will never be npos, assuming the header 
-		// string isn't mutated by some other thread.
-		auto const value_end = line.find_last_not_of(whitespace_characters);
-		
-		result.push_back(Header{
-			.name = line.substr(0, colon_pos), 
-			.value = line.substr(value_start, value_end + 1 - value_start)
-		});
-	}
+	std::ranges::copy(
+		headers 
+		| std::views::split('\n') | std::views::transform(utils::range_to_string_view)
+		| std::views::transform(parse_header) | utils::filter_true | utils::dereference,
+		std::back_inserter(result)
+	);
 
 	return result;
 }
