@@ -23,8 +23,7 @@ if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
 else ()
 	target_compile_options(cpp20_internet_client PUBLIC
 		-Werror -Wall -Wpedantic -Wextra 
-		-Wimplicit-fallthrough=5 
-		-Wduplicated-branches -Wduplicated-cond 
+		-Wimplicit-fallthrough
 		-Wcast-qual -Wconversion
 		
 		-Wno-parentheses
