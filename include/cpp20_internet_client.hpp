@@ -421,7 +421,7 @@ void write_to_file(_DataRange const& data, std::string const& file_name) {
 //---------------------------------------------------------
 
 constexpr auto filter_true = std::views::filter([](auto const& x){ return static_cast<bool>(x); });
-constexpr auto dereference = std::views::transform([](auto&& x) -> decltype(auto) { return *x; });
+constexpr auto dereference_move = std::views::transform([](auto&& x) { return std::move(*x); });
 
 /*
 	Transforms a range of chars into its lowercase equivalent.
@@ -943,7 +943,7 @@ inline std::vector<Header> parse_headers_string(std::string_view const headers)
 	std::ranges::copy(
 		headers 
 		| std::views::split('\n') | std::views::transform(utils::range_to_string_view)
-		| std::views::transform(parse_header) | utils::filter_true | utils::dereference,
+		| std::views::transform(parse_header) | utils::filter_true | utils::dereference_move,
 		std::back_inserter(result)
 	);
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18.0)
-project(Cpp20InternetClient VERSION 0.1.0 LANGUAGES CXX)
+project(Cpp20InternetClient VERSION 2.1.0 LANGUAGES CXX)
 
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib/)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin/)
@@ -23,8 +23,7 @@ if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
 else ()
 	target_compile_options(cpp20_internet_client PUBLIC
 		-Werror -Wall -Wpedantic -Wextra 
-		-Wimplicit-fallthrough=5 
-		-Wduplicated-branches -Wduplicated-cond 
+		-Wimplicit-fallthrough
 		-Wcast-qual -Wconversion
 		
 		-Wno-parentheses
