@@ -135,7 +135,7 @@ private:
 	functor type. 
 	
 	Example:
-	using DllHandle = utils::UniqueHandle<HMODULE, decltype([](auto& h){FreeLibrary(h);})>;
+	using DllHandle = utils::UniqueHandle<HMODULE, decltype([](auto& h){ FreeLibrary(h); })>;
 */
 template<IsTrivial _Type, std::invocable<_Type> _Deleter, _Type invalid_handle = _Type{}>
 class UniqueHandle {

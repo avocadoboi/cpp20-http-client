@@ -179,7 +179,7 @@ std::string get_error_message(DWORD const message_id) {
 
 namespace unix {
 
-using UniqueBio = std::unique_ptr<BIO, decltype([](BIO* x){BIO_free(x);})>;
+using UniqueBio = std::unique_ptr<BIO, decltype([](BIO* x){ BIO_free(x); })>;
 
 [[nodiscard]]
 std::string get_openssl_error_string() {
