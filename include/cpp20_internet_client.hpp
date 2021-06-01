@@ -1588,18 +1588,17 @@ enum class RequestMethod {
 */
 [[nodiscard]]
 inline std::string_view request_method_to_string(RequestMethod const method) {
-	// TODO: Use using enum declarations when supported by gcc.
-	// using enum RequestMethod;
+	using enum RequestMethod;
 	switch (method) {
-		case RequestMethod::Connect: return "CONNECT";
-		case RequestMethod::Delete:  return "DELETE";
-		case RequestMethod::Get:     return "GET";
-		case RequestMethod::Head:    return "HEAD";
-		case RequestMethod::Options: return "OPTIONS";
-		case RequestMethod::Patch:   return "PATCH";
-		case RequestMethod::Post:    return "POST";
-		case RequestMethod::Put:     return "PUT";
-		case RequestMethod::Trace:   return "TRACE";
+		case Connect: return "CONNECT";
+		case Delete:  return "DELETE";
+		case Get:     return "GET";
+		case Head:    return "HEAD";
+		case Options: return "OPTIONS";
+		case Patch:   return "PATCH";
+		case Post:    return "POST";
+		case Put:     return "PUT";
+		case Trace:   return "TRACE";
 	}
 	utils::unreachable();
 }
