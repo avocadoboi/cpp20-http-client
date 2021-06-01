@@ -417,7 +417,7 @@ private:
 	bool _is_closed{false};
 };
 
-using DllHandle = utils::UniqueHandle<HMODULE, decltype([](auto& h){FreeLibrary(h);})>;
+using DllHandle = utils::UniqueHandle<HMODULE, decltype([](auto h){ FreeLibrary(h); })>;
 
 struct SspiLibrary {
 	DllHandle dll_handle;
@@ -472,7 +472,7 @@ constexpr bool operator!=(SecBuffer const& first, SecBuffer const& second) noexc
 	return !(first == second);
 }
 
-using SecurityContextHandle = utils::UniqueHandle<CtxtHandle, decltype([](auto& h){sspi_library.functions->DeleteSecurityContext(&h);})>;
+using SecurityContextHandle = utils::UniqueHandle<CtxtHandle, decltype([](auto& h){ sspi_library.functions->DeleteSecurityContext(&h); })>;
 
 SecBufferDesc create_single_schannel_buffer_description(SecBuffer& buffer) {
 	return {
@@ -608,7 +608,7 @@ public:
 	SchannelConnectionInitializer& operator=(SchannelConnectionInitializer const&) = delete;
 
 private:
-	using CredentialsHandle = utils::UniqueHandle<CredHandle, decltype([](auto& h){sspi_library.functions->FreeCredentialHandle(&h);})>;
+	using CredentialsHandle = utils::UniqueHandle<CredHandle, decltype([](auto& h){ sspi_library.functions->FreeCredentialHandle(&h); })>;
 
 	using HandshakeOutputBuffer = utils::UniqueHandle<
 		SecBuffer, decltype([](auto const& buffer) {

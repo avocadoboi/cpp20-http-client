@@ -137,37 +137,37 @@ private:
 	Example:
 	using DllHandle = utils::UniqueHandle<HMODULE, decltype([](auto& h){ FreeLibrary(h); })>;
 */
-template<IsTrivial _Type, std::invocable<_Type> _Deleter, _Type invalid_handle = _Type{}>
+template<IsTrivial T, std::invocable<T&> Deleter_, T invalid_handle = T{}>
 class UniqueHandle {
 public:
 	[[nodiscard]]
-	constexpr explicit operator _Type() const noexcept {
+	constexpr explicit operator T() const noexcept {
 		return _handle;
 	}
 	[[nodiscard]]
-	constexpr _Type get() const noexcept {
+	constexpr T get() const noexcept {
 		return _handle;
 	}
 	[[nodiscard]]
-	constexpr _Type& get() noexcept {
+	constexpr T& get() noexcept {
 		return _handle;
 	}
 
 	[[nodiscard]]
-	constexpr _Type const* operator->() const noexcept {
+	constexpr T const* operator->() const noexcept {
 		return &_handle;
 	}
 	[[nodiscard]]
-	constexpr _Type* operator->() noexcept {
+	constexpr T* operator->() noexcept {
 		return &_handle;
 	}
 
 	[[nodiscard]]
-	constexpr _Type const* operator&() const noexcept {
+	constexpr T const* operator&() const noexcept {
 		return &_handle;
 	}
 	[[nodiscard]]
-	constexpr _Type* operator&() noexcept {
+	constexpr T* operator&() noexcept {
 		return &_handle;
 	}
 
@@ -182,13 +182,13 @@ public:
 
 	[[nodiscard]]
 	constexpr bool operator==(UniqueHandle const&) const noexcept 
-		requires std::equality_comparable<_Type> 
+		requires std::equality_comparable<T> 
 		= default;
 
-	constexpr explicit UniqueHandle(_Type const handle) :
+	constexpr explicit UniqueHandle(T const handle) :
 		_handle{handle}
 	{}
-	constexpr UniqueHandle& operator=(_Type const handle) {
+	constexpr UniqueHandle& operator=(T const handle) {
 		_close();
 		_handle = handle;
 		return *this;
@@ -214,11 +214,11 @@ public:
 	constexpr UniqueHandle& operator=(UniqueHandle const&) = delete;
 
 private:
-	_Type _handle{invalid_handle};
+	T _handle{invalid_handle};
 
 	constexpr void _close() {
 		if (_handle != invalid_handle) {
-			_Deleter{}(_handle);
+			Deleter_{}(_handle);
 			_handle = invalid_handle;
 		}
 	}
@@ -259,11 +259,11 @@ inline void panic(std::string_view const message) {
 
 //---------------------------------------------------------
 
-template<typename _Range, typename _ValueType>
-concept IsInputRangeOf = std::ranges::input_range<_Range> && std::same_as<std::ranges::range_value_t<_Range>, _ValueType>;
+template<typename Range_, typename ValueType_>
+concept IsInputRangeOf = std::ranges::input_range<Range_> && std::same_as<std::ranges::range_value_t<Range_>, ValueType_>;
 
-template<typename _Range, typename _ValueType>
-concept IsSizedRangeOf = IsInputRangeOf<_Range, _ValueType> && std::ranges::sized_range<_Range>;
+template<typename Range_, typename ValueType_>
+concept IsSizedRangeOf = IsInputRangeOf<Range_, ValueType_> && std::ranges::sized_range<Range_>;
 
 /*
 	Converts a range of contiguous characters to a std::basic_string_view.
@@ -274,8 +274,8 @@ constexpr auto range_to_string_view = []<
 		The ranges unfortunately are not std::ranges::contiguous_range
 		even when the base type is contiguous, so we can't use that constraint.
 	*/
-	IsInputRangeOf<char> _Range
-> (_Range&& range) {
+	IsInputRangeOf<char> Range_
+> (Range_&& range) {
 	return std::string_view{
 		&*std::ranges::begin(range), 
 		static_cast<std::string_view::size_type>(std::ranges::distance(range))
@@ -291,9 +291,9 @@ void enable_utf8_console();
 /*
 	Copies a sized range to a std::basic_string of any type.
 */
-template<IsSizedRangeOf<char> _Range> 
+template<IsSizedRangeOf<char> Range_> 
 [[nodiscard]]
-inline std::string range_to_string(_Range const& range) {
+inline std::string range_to_string(Range_ const& range) {
 	auto result = std::string(range.size(), char{});
 	std::ranges::copy(range, std::ranges::begin(result));
 	return result;
@@ -302,9 +302,9 @@ inline std::string range_to_string(_Range const& range) {
 /*
 	Copies a range of unknown size to a std::basic_string of any type.
 */
-template<IsInputRangeOf<char> _Range> 
+template<IsInputRangeOf<char> Range_> 
 [[nodiscard]]
-inline std::string range_to_string(_Range const& range) {
+inline std::string range_to_string(Range_ const& range) {
 	auto result = std::string();
 	std::ranges::copy(range, std::back_inserter(result));
 	return result;
@@ -313,18 +313,18 @@ inline std::string range_to_string(_Range const& range) {
 /*
 	Reinterprets a span of any byte-sized trivial type as a string view of a specified byte-sized character type.
 */
-template<IsByte _Byte>
+template<IsByte Byte_>
 [[nodiscard]] 
-std::string_view data_to_string(std::span<_Byte> const data) {
+std::string_view data_to_string(std::span<Byte_> const data) {
 	return std::string_view{reinterpret_cast<char const*>(data.data()), data.size()};
 }
 /*
 	Reinterprets a string view of any byte-sized character type as a span of any byte-sized trivial type.
 */
-template<IsByte _Byte>
+template<IsByte Byte_>
 [[nodiscard]]
-std::span<_Byte const> string_to_data(std::string_view const string) {
-	return std::span{reinterpret_cast<_Byte const*>(string.data()), string.size()};
+std::span<Byte_ const> string_to_data(std::string_view const string) {
+	return std::span{reinterpret_cast<Byte_ const*>(string.data()), string.size()};
 }
 
 //---------------------------------------------------------
@@ -360,18 +360,18 @@ std::size_t size_of_byte_data(T&& data) {
 /*
 	Copies any type of trivial byte-sized element(s) from data to range.
 */
-template<IsByteData _Data, std::ranges::contiguous_range _Range, IsByte _RangeValue = std::ranges::range_value_t<_Range>> 
+template<IsByteData Data_, std::ranges::contiguous_range Range_, IsByte RangeValue_ = std::ranges::range_value_t<Range_>> 
 [[nodiscard]]
-auto copy_byte_data(_Data&& data, _Range&& range) 
-	-> std::ranges::iterator_t<_Range> 
+auto copy_byte_data(Data_&& data, Range_&& range) 
+	-> std::ranges::iterator_t<Range_> 
 {
-	if constexpr (IsByte<_Data>) {
-		*std::ranges::begin(range) = *reinterpret_cast<_RangeValue*>(&data);
+	if constexpr (IsByte<Data_>) {
+		*std::ranges::begin(range) = *reinterpret_cast<RangeValue_*>(&data);
 		return std::ranges::begin(range) + 1;
 	}
 	else {
 		return std::ranges::copy(std::span{
-			reinterpret_cast<_RangeValue const*>(std::ranges::data(data)), 
+			reinterpret_cast<RangeValue_ const*>(std::ranges::data(data)), 
 			std::ranges::size(data)
 		}, std::ranges::begin(range)).out;
 	}
@@ -411,8 +411,8 @@ std::optional<T> string_to_integral(std::string_view const string, int const bas
 
 //---------------------------------------------------------
 
-template<std::ranges::contiguous_range _DataRange> requires IsByte<std::ranges::range_value_t<_DataRange>>
-void write_to_file(_DataRange const& data, std::string const& file_name) {
+template<std::ranges::contiguous_range DataRange_> requires IsByte<std::ranges::range_value_t<DataRange_>>
+void write_to_file(DataRange_ const& data, std::string const& file_name) {
 	// std::string because std::ofstream does not take std::string_view.
 	auto file_stream = std::ofstream{file_name, std::ios::binary};
 	file_stream.write(reinterpret_cast<char const*>(std::ranges::data(data)), std::ranges::size(data));
@@ -950,14 +950,14 @@ inline std::vector<Header> parse_headers_string(std::string_view const headers)
 	return result;
 }
 
-template<std::ranges::input_range _Range, IsHeader _Header = std::ranges::range_value_t<_Range>>
+template<std::ranges::input_range Range_, IsHeader Header_ = std::ranges::range_value_t<Range_>>
 [[nodiscard]]
-inline _Header const* find_header_by_name(_Range const& headers, std::string_view const name) 
+inline Header_ const* find_header_by_name(Range_ const& headers, std::string_view const name) 
 {
 	auto const lowercase_name_to_search = utils::range_to_string(
 		name | utils::ascii_lowercase_transform
 	);
-	auto const pos = std::ranges::find_if(headers, [&](_Header const& header) {
+	auto const pos = std::ranges::find_if(headers, [&](Header_ const& header) {
 		return std::ranges::equal(lowercase_name_to_search, header.name | utils::ascii_lowercase_transform);
 	});
 	if (pos == std::ranges::end(headers)) {
@@ -1633,9 +1633,9 @@ public:
 	/*
 		Adds headers to the request.
 	*/
-	template<IsHeader _Header, std::size_t extent = std::dynamic_extent>
+	template<IsHeader Header_, std::size_t extent = std::dynamic_extent>
 	[[nodiscard]]
-	Request&& add_headers(std::span<_Header const, extent> const headers) && {
+	Request&& add_headers(std::span<Header_ const, extent> const headers) && {
 		auto headers_string = std::string{};
 		headers_string.reserve(headers.size()*128);
 		
@@ -1656,9 +1656,9 @@ public:
 		Adds headers to the request.
 		This is a variadic template that can take any number of headers.
 	*/
-	template<IsHeader ... _Header>
+	template<IsHeader ... Header_>
 	[[nodiscard]]
-	Request&& add_headers(_Header&& ... p_headers) && {
+	Request&& add_headers(Header_&& ... p_headers) && {
 		auto const headers = std::array{Header{p_headers}...};
 		return std::move(*this).add_headers(std::span{headers});
 	}
@@ -1674,11 +1674,11 @@ public:
 	/*
 		Sets the content of the request as a sequence of bytes.
 	*/
-	template<utils::IsByte _Byte>
+	template<utils::IsByte Byte_>
 	[[nodiscard]]
-	Request&& set_body(std::span<_Byte const> const body_data) && {
+	Request&& set_body(std::span<Byte_ const> const body_data) && {
 		_body.resize(body_data.size());
-		if constexpr (std::same_as<_Byte, std::byte>) {
+		if constexpr (std::same_as<Byte_, std::byte>) {
 			std::ranges::copy(body_data, _body.begin());
 		}
 		else {
