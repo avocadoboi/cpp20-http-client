@@ -35,21 +35,13 @@ SOFTWARE.
 #include <iostream>
 #include <memory>
 #include <ranges>
+#include <source_location>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <variant>
-
-#if __has_include(<source_location>)
-#	include <source_location>
-#elif __has_include(<experimental/source_location>)
-#	include <experimental/source_location>
-	namespace std {
-		using source_location = std::experimental::source_location;
-	}
-#endif
 
 /*
 Namespaces:
@@ -106,12 +98,12 @@ class [[nodiscard]] Cleanup {
 public:
 	[[nodiscard]] 
 	Cleanup(T&& callable) :
-		_callable{std::forward<T>(callable)}
+		callable_{std::forward<T>(callable)}
 	{}
 
 	Cleanup() = delete;
 	~Cleanup() {
-		_callable();
+		callable_();
 	}
 
 	Cleanup(Cleanup&&) noexcept = delete;
@@ -121,7 +113,7 @@ public:
 	Cleanup& operator=(Cleanup const&) = delete;
 	
 private:
-	T _callable;
+	T callable_;
 };
 
 //---------------------------------------------------------
@@ -142,42 +134,42 @@ class UniqueHandle {
 public:
 	[[nodiscard]]
 	constexpr explicit operator T() const noexcept {
-		return _handle;
+		return handle_;
 	}
 	[[nodiscard]]
 	constexpr T get() const noexcept {
-		return _handle;
+		return handle_;
 	}
 	[[nodiscard]]
 	constexpr T& get() noexcept {
-		return _handle;
+		return handle_;
 	}
 
 	[[nodiscard]]
 	constexpr T const* operator->() const noexcept {
-		return &_handle;
+		return &handle_;
 	}
 	[[nodiscard]]
 	constexpr T* operator->() noexcept {
-		return &_handle;
+		return &handle_;
 	}
 
 	[[nodiscard]]
 	constexpr T const* operator&() const noexcept {
-		return &_handle;
+		return &handle_;
 	}
 	[[nodiscard]]
 	constexpr T* operator&() noexcept {
-		return &_handle;
+		return &handle_;
 	}
 
 	[[nodiscard]]
 	constexpr explicit operator bool() const noexcept {
-		return _handle != invalid_handle;
+		return handle_ != invalid_handle;
 	}
 	[[nodiscard]]
 	constexpr bool operator!() const noexcept {
-		return _handle == invalid_handle;
+		return handle_ == invalid_handle;
 	}
 
 	[[nodiscard]]
@@ -186,27 +178,27 @@ public:
 		= default;
 
 	constexpr explicit UniqueHandle(T const handle) :
-		_handle{handle}
+		handle_{handle}
 	{}
 	constexpr UniqueHandle& operator=(T const handle) {
-		_close();
-		_handle = handle;
+		close_();
+		handle_ = handle;
 		return *this;
 	}
 
 	constexpr UniqueHandle() = default;
 	constexpr ~UniqueHandle() {
-		_close();
+		close_();
 	}
 
 	constexpr UniqueHandle(UniqueHandle&& handle) noexcept :
-		_handle{handle._handle}
+		handle_{handle.handle_}
 	{
-		handle._handle = invalid_handle;
+		handle.handle_ = invalid_handle;
 	}
 	constexpr UniqueHandle& operator=(UniqueHandle&& handle) noexcept {
-		_handle = handle._handle;
-		handle._handle = invalid_handle;
+		handle_ = handle.handle_;
+		handle.handle_ = invalid_handle;
 		return *this;
 	}
 
@@ -214,12 +206,12 @@ public:
 	constexpr UniqueHandle& operator=(UniqueHandle const&) = delete;
 
 private:
-	T _handle{invalid_handle};
+	T handle_{invalid_handle};
 
-	constexpr void _close() {
-		if (_handle != invalid_handle) {
-			Deleter_{}(_handle);
-			_handle = invalid_handle;
+	constexpr void close_() {
+		if (handle_ != invalid_handle) {
+			Deleter_{}(handle_);
+			handle_ = invalid_handle;
 		}
 	}
 };
@@ -587,37 +579,37 @@ class ConnectionFailed : public std::exception {
 public:
 	[[nodiscard]]
 	char const* what() const noexcept override {
-		return _reason.c_str();
+		return reason_.c_str();
 	}
 
 	[[nodiscard]]
 	bool get_is_tls_failure() const noexcept {
-		return _is_tls_failure;
+		return is_tls_failure_;
 	}
 
 	ConnectionFailed(std::string reason, bool const is_tls_failure = false) noexcept :
-		_reason(std::move(reason)),
-		_is_tls_failure{is_tls_failure}
+		reason_(std::move(reason)),
+		is_tls_failure_{is_tls_failure}
 	{}
 
 private:
-	std::string _reason;
-	bool _is_tls_failure;
+	std::string reason_;
+	bool is_tls_failure_;
 };
 
 class ResponseParsingFailed : public std::exception {
 public:
 	[[nodiscard]]
 	char const* what() const noexcept override {
-		return _reason.c_str();
+		return reason_.c_str();
 	}
 
 	ResponseParsingFailed(std::string reason) :
-		_reason(std::move(reason))
+		reason_(std::move(reason))
 	{}
 
 private:
-	std::string _reason;
+	std::string reason_;
 };
 
 } // namespace errors
@@ -726,7 +718,7 @@ public:
 
 private:
 	class Implementation;
-	std::unique_ptr<Implementation> _implementation;
+	std::unique_ptr<Implementation> implementation_;
 	
 	Socket(std::string_view server, Port port, bool is_tls_encrypted);
 	friend Socket open_socket(std::string_view, Port, bool);
@@ -1060,7 +1052,7 @@ class ResponseProgressRaw {
 	
 public:
 	constexpr void stop() noexcept {
-		_is_stopped = true;
+		is_stopped_ = true;
 	}
 
 	std::span<std::byte const> data;
@@ -1071,7 +1063,7 @@ public:
 	{}
 
 private:
-	bool _is_stopped{false};
+	bool is_stopped_{false};
 };
 
 class ResponseProgressHeaders : public algorithms::ParsedHeadersInterface {
@@ -1084,11 +1076,11 @@ public:
 	
 	[[nodiscard]]
 	constexpr algorithms::ParsedResponse const& get_parsed_response() const noexcept override {
-		return _parsed_response;
+		return parsed_response_;
 	}
 
 	ResponseProgressHeaders(ResponseProgressRaw const p_raw_progress, algorithms::ParsedResponse const& parsed_response) :
-		raw_progress{p_raw_progress}, _parsed_response{parsed_response}
+		raw_progress{p_raw_progress}, parsed_response_{parsed_response}
 	{}
 
 	ResponseProgressHeaders() = delete;
@@ -1101,7 +1093,7 @@ public:
 	ResponseProgressHeaders& operator=(ResponseProgressHeaders&&) noexcept = delete;
 
 private:
-	algorithms::ParsedResponse const& _parsed_response;
+	algorithms::ParsedResponse const& parsed_response_;
 };
 
 class ResponseProgressBody : public algorithms::ParsedHeadersInterface {
@@ -1121,7 +1113,7 @@ public:
 	
 	[[nodiscard]]
 	constexpr algorithms::ParsedResponse const& get_parsed_response() const noexcept override {
-		return _parsed_response;
+		return parsed_response_;
 	}
 
 	ResponseProgressBody(
@@ -1133,7 +1125,7 @@ public:
 		raw_progress{p_raw_progress},
 		body_data_so_far{p_body_data_so_far},
 		total_expected_body_size{p_total_expected_body_size},
-		_parsed_response{parsed_response}
+		parsed_response_{parsed_response}
 	{}
 
 	ResponseProgressBody() = delete;
@@ -1146,7 +1138,7 @@ public:
 	ResponseProgressBody& operator=(ResponseProgressBody&&) noexcept = delete;
 
 private:
-	algorithms::ParsedResponse const& _parsed_response;
+	algorithms::ParsedResponse const& parsed_response_;
 };
 
 /*
@@ -1156,7 +1148,7 @@ class Response : public algorithms::ParsedHeadersInterface {
 public:
 	[[nodiscard]]
 	constexpr algorithms::ParsedResponse const& get_parsed_response() const noexcept override {
-		return _parsed_response;
+		return parsed_response_;
 	}
 	
 	/*
@@ -1165,7 +1157,7 @@ public:
 	*/
 	[[nodiscard]]
 	std::span<std::byte const> get_body() const {
-		return _parsed_response.body_data;
+		return parsed_response_.body_data;
 	}
 	/*
 		Returns the body of the response as a string.
@@ -1178,7 +1170,7 @@ public:
 
 	[[nodiscard]]
 	std::string_view get_url() const {
-		return _url;
+		return url_;
 	}
 
 	Response() = delete;
@@ -1191,13 +1183,13 @@ public:
 	Response& operator=(Response&&) noexcept = default;
 
 	Response(algorithms::ParsedResponse&& parsed_response, std::string&& url) :
-		_parsed_response{std::move(parsed_response)},
-		_url{std::move(url)}
+		parsed_response_{std::move(parsed_response)},
+		url_{std::move(url)}
 	{}
 
 private:
-	algorithms::ParsedResponse _parsed_response;
-	std::string _url;
+	algorithms::ParsedResponse parsed_response_;
+	std::string url_;
 };
 
 namespace algorithms {
@@ -1206,33 +1198,33 @@ class ChunkyBodyParser {
 public:
 	[[nodiscard]]
 	std::optional<utils::DataVector> parse_new_data(std::span<std::byte const> const new_data) {
-		if (_has_returned_result) {
+		if (has_returned_result_) {
 			return {};
 		}
-		if (_is_finished) {
-			_has_returned_result = true;
-			return std::move(_result);
+		if (is_finished_) {
+			has_returned_result_ = true;
+			return std::move(result_);
 		}
 		
-		auto cursor = _start_parse_offset;
+		auto cursor = start_parse_offset_;
 		
 		while (true) {
 			if (cursor >= new_data.size()) {
-				_start_parse_offset = cursor - new_data.size();
+				start_parse_offset_ = cursor - new_data.size();
 				return {};
 			}
-			if (auto const cursor_offset = _parse_next_part(new_data.subspan(cursor))) {
+			if (auto const cursor_offset = parse_next_part_(new_data.subspan(cursor))) {
 				cursor += cursor_offset;
 			}
 			else {
-				_has_returned_result = true;
-				return std::move(_result);
+				has_returned_result_ = true;
+				return std::move(result_);
 			}
 		}
 	}
 	[[nodiscard]]
 	std::span<std::byte const> get_result_so_far() const {
-		return _result;
+		return result_;
 	}
 
 private:
@@ -1245,76 +1237,76 @@ private:
 		It may be past the end of the part.
 	*/
 	[[nodiscard]]
-	std::size_t _parse_next_part(std::span<std::byte const> const new_data) {
-		if (_chunk_size_left) {
-			return _parse_chunk_body_part(new_data);
+	std::size_t parse_next_part_(std::span<std::byte const> const new_data) {
+		if (chunk_size_left_) {
+			return parse_chunk_body_part_(new_data);
 		}
-		else return _parse_chunk_separator_part(new_data);
+		else return parse_chunk_separator_part_(new_data);
 	}
 
 	[[nodiscard]]
-	std::size_t _parse_chunk_body_part(std::span<std::byte const> const new_data) {
-		if (_chunk_size_left > new_data.size())
+	std::size_t parse_chunk_body_part_(std::span<std::byte const> const new_data) {
+		if (chunk_size_left_ > new_data.size())
 		{
-			_chunk_size_left -= new_data.size();
-			utils::append_to_vector(_result, new_data);
+			chunk_size_left_ -= new_data.size();
+			utils::append_to_vector(result_, new_data);
 			return new_data.size();
 		}
 		else {
-			utils::append_to_vector(_result, new_data.first(_chunk_size_left));
+			utils::append_to_vector(result_, new_data.first(chunk_size_left_));
 
 			// After each chunk, there is a \r\n and then the size of the next chunk.
 			// We skip the \r\n so the next part starts at the size number.
-			auto const part_end = _chunk_size_left + newline.size();
-			_chunk_size_left = 0;
+			auto const part_end = chunk_size_left_ + newline.size();
+			chunk_size_left_ = 0;
 			return part_end;
 		}
 	}
 
 	[[nodiscard]]
-	std::size_t _parse_chunk_separator_part(std::span<std::byte const> const new_data) {
+	std::size_t parse_chunk_separator_part_(std::span<std::byte const> const new_data) {
 		auto const data_string = utils::data_to_string(new_data);
 
 		auto const first_newline_character_pos = data_string.find(newline[0]);
 		
 		if (first_newline_character_pos == std::string_view::npos) {
-			_chunk_size_string_buffer += data_string;
+			chunk_size_string_buffer_ += data_string;
 			return new_data.size();
 		}
-		else if (_chunk_size_string_buffer.empty()) {
-			_parse_chunk_size_left(data_string.substr(0, first_newline_character_pos));
+		else if (chunk_size_string_buffer_.empty()) {
+			parse_chunk_size_left_(data_string.substr(0, first_newline_character_pos));
 		}
 		else {
-			_chunk_size_string_buffer += data_string.substr(0, first_newline_character_pos);
-			_parse_chunk_size_left(_chunk_size_string_buffer);
-			_chunk_size_string_buffer.clear();
+			chunk_size_string_buffer_ += data_string.substr(0, first_newline_character_pos);
+			parse_chunk_size_left_(chunk_size_string_buffer_);
+			chunk_size_string_buffer_.clear();
 		}
 
-		if (_chunk_size_left == 0) {
-			_is_finished = true;
+		if (chunk_size_left_ == 0) {
+			is_finished_ = true;
 			return 0;
 		}
 		
 		return first_newline_character_pos + newline.size();
 	}
 
-	void _parse_chunk_size_left(std::string_view const string) {
+	void parse_chunk_size_left_(std::string_view const string) {
 		// hexadecimal
 		if (auto const result = utils::string_to_integral<std::size_t>(string, 16)) {
-			_chunk_size_left = *result;
+			chunk_size_left_ = *result;
 		}
 		else throw errors::ResponseParsingFailed{"Failed parsing http body chunk size."};
 	}
 	
-	utils::DataVector _result;
+	utils::DataVector result_;
 
-	bool _is_finished{false};
-	bool _has_returned_result{false};
+	bool is_finished_{false};
+	bool has_returned_result_{false};
 
-	std::size_t _start_parse_offset{};
+	std::size_t start_parse_offset_{};
 	
-	std::string _chunk_size_string_buffer;
-	std::size_t _chunk_size_left{};
+	std::string chunk_size_string_buffer_;
+	std::size_t chunk_size_left_{};
 };
 
 struct ResponseCallbacks {
@@ -1337,93 +1329,93 @@ public:
 	*/
 	[[nodiscard]]
 	std::optional<ParsedResponse> parse_new_data(std::span<std::byte const> const data) {
-		if (_is_done) {
+		if (is_done_) {
 			return {};
 		}
 		
-		auto const new_data_start = _buffer.size();
+		auto const new_data_start = buffer_.size();
 		
-		utils::append_to_vector(_buffer, data);
+		utils::append_to_vector(buffer_, data);
 
-		if (_callbacks && (*_callbacks)->handle_raw_progress) {
-			auto raw_progress = ResponseProgressRaw{_buffer, new_data_start};
-			(*_callbacks)->handle_raw_progress(raw_progress);
-			if (raw_progress._is_stopped) {
-				_finish();
+		if (callbacks_ && (*callbacks_)->handle_raw_progress) {
+			auto raw_progress = ResponseProgressRaw{buffer_, new_data_start};
+			(*callbacks_)->handle_raw_progress(raw_progress);
+			if (raw_progress.is_stopped_) {
+				finish_();
 			}
 		}
 		
-		if (!_is_done && _result.headers_string.empty()) {
-			_try_parse_headers(new_data_start);
+		if (!is_done_ && result_.headers_string.empty()) {
+			try_parse_headers_(new_data_start);
 		}
 
-		if (!_is_done && !_result.headers_string.empty()) {
-			if (_chunky_body_parser) {
-				_parse_new_chunky_body_data(new_data_start);
+		if (!is_done_ && !result_.headers_string.empty()) {
+			if (chunky_body_parser_) {
+				parse_new_chunky_body_data_(new_data_start);
 			}
 			else {
-				_parse_new_regular_body_data(new_data_start);
+				parse_new_regular_body_data_(new_data_start);
 			}
 		}
-		if (_is_done) {
-			return std::move(_result);
+		if (is_done_) {
+			return std::move(result_);
 		}
 		return {};
 	}
 
 	ResponseParser() = default;
 	ResponseParser(ResponseCallbacks& callbacks) :
-		_callbacks{&callbacks}
+		callbacks_{&callbacks}
 	{}
 	
 private:
-	void _finish() {
-		_is_done = true;
-		if (_callbacks && (*_callbacks)->handle_stop) {
-			(*_callbacks)->handle_stop();
+	void finish_() {
+		is_done_ = true;
+		if (callbacks_ && (*callbacks_)->handle_stop) {
+			(*callbacks_)->handle_stop();
 		}
 	}
 
-	void _try_parse_headers(std::size_t const new_data_start) {
-		if (auto const headers_string = _try_extract_headers_string(new_data_start))
+	void try_parse_headers_(std::size_t const new_data_start) {
+		if (auto const headers_string = try_extract_headers_string_(new_data_start))
 		{
-			_result.headers_string = *headers_string;
+			result_.headers_string = *headers_string;
 
-			auto status_line_end = _result.headers_string.find_first_of("\r\n");
+			auto status_line_end = result_.headers_string.find_first_of("\r\n");
 			if (status_line_end == std::string_view::npos) {
-				status_line_end = _result.headers_string.size();
+				status_line_end = result_.headers_string.size();
 			}
 			
-			_result.status_line = algorithms::parse_status_line(
-				std::string_view{_result.headers_string}.substr(0, status_line_end)
+			result_.status_line = algorithms::parse_status_line(
+				std::string_view{result_.headers_string}.substr(0, status_line_end)
 			);
 
-			if (_result.headers_string.size() > status_line_end) {
-				_result.headers = algorithms::parse_headers_string(
-					std::string_view{_result.headers_string}.substr(status_line_end)
+			if (result_.headers_string.size() > status_line_end) {
+				result_.headers = algorithms::parse_headers_string(
+					std::string_view{result_.headers_string}.substr(status_line_end)
 				);
 			}
 
-			if (_callbacks && (*_callbacks)->handle_headers) {
-				auto progress_headers = ResponseProgressHeaders{ResponseProgressRaw{_buffer, new_data_start}, _result};
-				(*_callbacks)->handle_headers(progress_headers);
-				if (progress_headers.raw_progress._is_stopped) {
-					_finish();
+			if (callbacks_ && (*callbacks_)->handle_headers) {
+				auto progress_headers = ResponseProgressHeaders{ResponseProgressRaw{buffer_, new_data_start}, result_};
+				(*callbacks_)->handle_headers(progress_headers);
+				if (progress_headers.raw_progress.is_stopped_) {
+					finish_();
 				}
 			}
 
-			if (auto const body_size_try = _get_body_size()) {
-				_body_size = *body_size_try;
+			if (auto const body_size_try = get_body_size_()) {
+				body_size_ = *body_size_try;
 			}
-			else if (auto const transfer_encoding = algorithms::find_header_by_name(_result.headers, "transfer-encoding");
+			else if (auto const transfer_encoding = algorithms::find_header_by_name(result_.headers, "transfer-encoding");
 				transfer_encoding && transfer_encoding->value == "chunked")
 			{
-				_chunky_body_parser = ChunkyBodyParser{};
+				chunky_body_parser_ = ChunkyBodyParser{};
 			}
 		}
 	}
 	[[nodiscard]]
-	std::optional<std::string_view> _try_extract_headers_string(std::size_t const new_data_start) {
+	std::optional<std::string_view> try_extract_headers_string_(std::size_t const new_data_start) {
 		// '\n' line endings are not conformant with the HTTP standard.
 		for (std::string_view const empty_line : {"\r\n\r\n", "\n\n"})
 		{
@@ -1431,21 +1423,21 @@ private:
 				static_cast<std::int64_t>(new_data_start - empty_line.length() + 1)
 			));
 			
-			auto const string_view_to_search = utils::data_to_string(std::span{_buffer});
+			auto const string_view_to_search = utils::data_to_string(std::span{buffer_});
 
 			if (auto const position = string_view_to_search.find(empty_line, find_start);
 				position != std::string_view::npos) 
 			{
-				_body_start = position + empty_line.length();
+				body_start_ = position + empty_line.length();
 				return string_view_to_search.substr(0, position);
 			}
 		}
 		return {};
 	}
 	[[nodiscard]]
-	std::optional<std::size_t> _get_body_size() const {
+	std::optional<std::size_t> get_body_size_() const {
 		if (auto const content_length_string = 
-				algorithms::find_header_by_name(_result.headers, "content-length")) 
+				algorithms::find_header_by_name(result_.headers, "content-length")) 
 		{
 			if (auto const parse_result = 
 					utils::string_to_integral<std::size_t>(content_length_string->value)) 
@@ -1456,80 +1448,80 @@ private:
 		return {};
 	}
 
-	void _parse_new_chunky_body_data(std::size_t const new_data_start) {
+	void parse_new_chunky_body_data_(std::size_t const new_data_start) {
 		// May need to add an offset if this packet is
 		// where the headers end and the body starts.
-		auto const body_parse_start = std::max(new_data_start, _body_start);
-		if (auto const body = _chunky_body_parser->parse_new_data(std::span{_buffer}.subspan(body_parse_start))) 
+		auto const body_parse_start = std::max(new_data_start, body_start_);
+		if (auto const body = chunky_body_parser_->parse_new_data(std::span{buffer_}.subspan(body_parse_start))) 
 		{
-			_result.body_data = std::move(*body);
+			result_.body_data = std::move(*body);
 
-			if (_callbacks && (*_callbacks)->handle_body_progress) {
+			if (callbacks_ && (*callbacks_)->handle_body_progress) {
 				auto body_progress = ResponseProgressBody{
-					ResponseProgressRaw{_buffer, new_data_start}, 
-					_result, 
-					_result.body_data, {}
+					ResponseProgressRaw{buffer_, new_data_start}, 
+					result_, 
+					result_.body_data, {}
 				};
-				(*_callbacks)->handle_body_progress(body_progress);
+				(*callbacks_)->handle_body_progress(body_progress);
 			}
 			
-			_finish();
+			finish_();
 		}
-		else if (_callbacks && (*_callbacks)->handle_body_progress) {
+		else if (callbacks_ && (*callbacks_)->handle_body_progress) {
 			auto body_progress = ResponseProgressBody{
-				ResponseProgressRaw{_buffer, new_data_start}, 
-				_result, 
-				_chunky_body_parser->get_result_so_far(), {}
+				ResponseProgressRaw{buffer_, new_data_start}, 
+				result_, 
+				chunky_body_parser_->get_result_so_far(), {}
 			};
-			(*_callbacks)->handle_body_progress(body_progress);
-			if (body_progress.raw_progress._is_stopped) {
-				_finish();
+			(*callbacks_)->handle_body_progress(body_progress);
+			if (body_progress.raw_progress.is_stopped_) {
+				finish_();
 			}
 		}
 	}
 
-	void _parse_new_regular_body_data(std::size_t const new_data_start) {
-		if (_buffer.size() >= _body_start + _body_size) {
-			auto const body_begin = _buffer.begin() + _body_start;
-			_result.body_data = utils::DataVector(body_begin, body_begin + _body_size);
+	void parse_new_regular_body_data_(std::size_t const new_data_start) {
+		if (buffer_.size() >= body_start_ + body_size_) {
+			auto const body_begin = buffer_.begin() + body_start_;
+			result_.body_data = utils::DataVector(body_begin, body_begin + body_size_);
 
-			if (_callbacks && (*_callbacks)->handle_body_progress) {
+			if (callbacks_ && (*callbacks_)->handle_body_progress) {
 				auto body_progress = ResponseProgressBody{
-					ResponseProgressRaw{_buffer, new_data_start}, 
-					_result, 
-					_result.body_data, 
-					_body_size
+					ResponseProgressRaw{buffer_, new_data_start}, 
+					result_, 
+					result_.body_data, 
+					body_size_
 				};
-				(*_callbacks)->handle_body_progress(body_progress);
+				(*callbacks_)->handle_body_progress(body_progress);
 			}
 
-			_finish();
+			finish_();
 		}
-		else if (_callbacks && (*_callbacks)->handle_body_progress) {
+		else if (callbacks_ && (*callbacks_)->handle_body_progress) {
 			auto body_progress = ResponseProgressBody{
-				ResponseProgressRaw{_buffer, new_data_start}, 
-				_result, 
-				std::span{_buffer}.subspan(_body_start), 
-				_body_size
+				ResponseProgressRaw{buffer_, new_data_start}, 
+				result_, 
+				std::span{buffer_}.subspan(body_start_), 
+				body_size_
 			};
-			(*_callbacks)->handle_body_progress(body_progress);
-			if (body_progress.raw_progress._is_stopped) {
-				_finish();
+			(*callbacks_)->handle_body_progress(body_progress);
+			if (body_progress.raw_progress.is_stopped_) {
+				finish_();
 			}
 		}
 	}
 
-	utils::DataVector _buffer;
+	utils::DataVector buffer_;
 
-	ParsedResponse _result;
-	bool _is_done{false};
+	ParsedResponse result_;
+	bool is_done_{false};
 
-	std::size_t _body_start{};
-	std::size_t _body_size{};
+	std::size_t body_start_{};
+	std::size_t body_size_{};
 
-	std::optional<ChunkyBodyParser> _chunky_body_parser;
+	std::optional<ChunkyBodyParser> chunky_body_parser_;
 
-	std::optional<ResponseCallbacks*> _callbacks;
+	std::optional<ResponseCallbacks*> callbacks_;
 };
 
 template<std::size_t buffer_size = std::size_t{1} << 12>
@@ -1622,9 +1614,9 @@ public:
 			return std::move(*this);
 		}
 		
-		_headers += headers_string;
+		headers_ += headers_string;
 		if (headers_string.back() != '\n') {
-			_headers += "\r\n"; // CRLF is the correct line ending for the HTTP protocol
+			headers_ += "\r\n"; // CRLF is the correct line ending for the HTTP protocol
 		}
 		
 		return std::move(*this);
@@ -1676,12 +1668,12 @@ public:
 	template<utils::IsByte Byte_>
 	[[nodiscard]]
 	Request&& set_body(std::span<Byte_ const> const body_data) && {
-		_body.resize(body_data.size());
+		body_.resize(body_data.size());
 		if constexpr (std::same_as<Byte_, std::byte>) {
-			std::ranges::copy(body_data, _body.begin());
+			std::ranges::copy(body_data, body_.begin());
 		}
 		else {
-			std::ranges::copy(std::span{reinterpret_cast<std::byte const*>(body_data.data()), body_data.size()}, _body.begin());
+			std::ranges::copy(std::span{reinterpret_cast<std::byte const*>(body_data.data()), body_data.size()}, body_.begin());
 		}
 		return std::move(*this);
 	}
@@ -1695,22 +1687,22 @@ public:
 
 	[[nodiscard]]
 	Request&& set_raw_progress_callback(std::function<void(ResponseProgressRaw&)> callback) && {
-		_callbacks.handle_raw_progress = std::move(callback);
+		callbacks_.handle_raw_progress = std::move(callback);
 		return std::move(*this);
 	}
 	[[nodiscard]]
 	Request&& set_headers_callback(std::function<void(ResponseProgressHeaders&)> callback) && {
-		_callbacks.handle_headers = std::move(callback);
+		callbacks_.handle_headers = std::move(callback);
 		return std::move(*this);
 	}
 	[[nodiscard]]
 	Request&& set_body_progress_callback(std::function<void(ResponseProgressBody&)> callback) && {
-		_callbacks.handle_body_progress = std::move(callback);
+		callbacks_.handle_body_progress = std::move(callback);
 		return std::move(*this);
 	}
 	[[nodiscard]]
 	Request&& set_finish_callback(std::function<void(Response&)> callback) && {
-		_callbacks.handle_finish = std::move(callback);
+		callbacks_.handle_finish = std::move(callback);
 		return std::move(*this);
 	}
 
@@ -1721,7 +1713,7 @@ public:
 		Sends the request and blocks until the response has been received.
 	*/
 	Response send() && {
-		return algorithms::receive_response<>(_send_and_get_receive_socket(), std::move(_url), std::move(_callbacks));
+		return algorithms::receive_response<>(send_and_get_receive_socket_(), std::move(url_), std::move(callbacks_));
 	}
 	/*
 		Sends the request and blocks until the response has been received.
@@ -1733,14 +1725,14 @@ public:
 	*/
 	template<std::size_t buffer_size>
 	Response send() && {
-		return algorithms::receive_response<buffer_size>(_send_and_get_receive_socket(), std::move(_url), std::move(_callbacks));
+		return algorithms::receive_response<buffer_size>(send_and_get_receive_socket_(), std::move(url_), std::move(callbacks_));
 	}
 	/*
 		Sends the request and returns immediately after the data has been sent.
 		The returned future receives the response asynchronously.
 	*/
 	std::future<Response> send_async() && {
-		return std::async(&algorithms::receive_response<>, _send_and_get_receive_socket(), std::move(_url), std::move(_callbacks));
+		return std::async(&algorithms::receive_response<>, send_and_get_receive_socket_(), std::move(url_), std::move(callbacks_));
 	}
 	/*
 		Sends the request and returns immediately after the data has been sent.
@@ -1753,7 +1745,7 @@ public:
 	*/
 	template<std::size_t buffer_size>
 	std::future<Response> send_async() && {
-		return std::async(&algorithms::receive_response<buffer_size>, _send_and_get_receive_socket(), std::move(_url), std::move(_callbacks));
+		return std::async(&algorithms::receive_response<buffer_size>, send_and_get_receive_socket_(), std::move(url_), std::move(callbacks_));
 	}
 
 	Request() = delete;
@@ -1767,49 +1759,49 @@ public:
 
 private:
 	[[nodiscard]]
-	Socket _send_and_get_receive_socket() {
-		auto socket = open_socket(_split_url.domain_name, utils::get_port(_split_url.protocol));
+	Socket send_and_get_receive_socket_() {
+		auto socket = open_socket(split_url_.domain_name, utils::get_port(split_url_.protocol));
 		
 		using namespace std::string_view_literals;
 
-		if (!_body.empty()) {
+		if (!body_.empty()) {
 			// TODO: Use std::format when available
-			// _headers += std::format("Transfer-Encoding: identity\r\nContent-Length: {}\r\n", _body.size());
-			((_headers += "Transfer-Encoding: identity\r\nContent-Length: ") += std::to_string(_body.size())) += "\r\n";
+			// headers_ += std::format("Transfer-Encoding: identity\r\nContent-Length: {}\r\n", body_.size());
+			((headers_ += "Transfer-Encoding: identity\r\nContent-Length: ") += std::to_string(body_.size())) += "\r\n";
 		}
 		
 		auto const request_data = utils::concatenate_byte_data(
-			request_method_to_string(_method),
+			request_method_to_string(method_),
 			' ',
-			_split_url.path,
+			split_url_.path,
 			" HTTP/1.1\r\nHost: "sv,
-			_split_url.domain_name,
-			_headers,
+			split_url_.domain_name,
+			headers_,
 			"\r\n"sv,
-			_body
+			body_
 		);
 		socket.write(request_data);
 
 		return socket;
 	}
 
-	RequestMethod _method;
+	RequestMethod method_;
 
-	std::string _url;
-	utils::SplitUrl _split_url;
+	std::string url_;
+	utils::SplitUrl split_url_;
 
-	std::string _headers{"\r\n"};
-	utils::DataVector _body;
+	std::string headers_{"\r\n"};
+	utils::DataVector body_;
 
-	algorithms::ResponseCallbacks _callbacks;
+	algorithms::ResponseCallbacks callbacks_;
 
 	Request(RequestMethod const method, std::string_view const url, Protocol const default_protocol) :
-		_method{method},
-		_url{utils::uri_encode(url)},
-		_split_url{utils::split_url(std::string_view{_url})}
+		method_{method},
+		url_{utils::uri_encode(url)},
+		split_url_{utils::split_url(std::string_view{url_})}
 	{
-		if (_split_url.protocol == Protocol::Unknown) {
-			_split_url.protocol = default_protocol;
+		if (split_url_.protocol == Protocol::Unknown) {
+			split_url_.protocol = default_protocol;
 		}
 	}
 	friend Request get(std::string_view, Protocol);

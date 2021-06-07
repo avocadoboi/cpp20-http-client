@@ -241,17 +241,17 @@ public:
 		}
 	}
 	~WinSockLifetime() {
-		if (!_is_moved) {
+		if (!is_moved_) {
 			WSACleanup();
 		}
 	}
 
 	WinSockLifetime(WinSockLifetime&& other) noexcept {
-		other._is_moved = true;
+		other.is_moved_ = true;
 	}
 	WinSockLifetime& operator=(WinSockLifetime&& other) noexcept {
-		other._is_moved = true;
-		_is_moved = false;
+		other.is_moved_ = true;
+		is_moved_ = false;
 		return *this;
 	}
 
@@ -259,7 +259,7 @@ public:
 	WinSockLifetime& operator=(WinSockLifetime const&) = delete;
 
 private:
-	bool _is_moved{false};
+	bool is_moved_{false};
 };
 
 using SocketHandle = utils::UniqueHandle<
@@ -275,25 +275,29 @@ using SocketHandle = utils::UniqueHandle<
 
 class RawSocket {
 public:
-	void set_is_nonblocking(bool const p_is_nonblocking) {
-		if (_is_nonblocking == p_is_nonblocking) {
-			return;
+	void set_is_nonblocking(bool const p_is_nonblocking) 
+	{
+		if (is_nonblocking_ != p_is_nonblocking) 
+		{
+			is_nonblocking_ = p_is_nonblocking;
+
+			auto is_nonblocking = static_cast<u_long>(p_is_nonblocking);
+			ioctlsocket(handle_.get(), FIONBIO, &is_nonblocking);
 		}
-		auto is_nonblocking = static_cast<u_long>(p_is_nonblocking);
-		ioctlsocket(_handle.get(), FIONBIO, &is_nonblocking);
 	}
 	[[nodiscard]]
 	SOCKET get_winsock_handle() {
-		return _handle.get();
+		return handle_.get();
 	}
 
-	void write(std::span<std::byte const> const data) {
-		if (_is_closed) {
-			_reconnect();
+	void write(std::span<std::byte const> const data) 
+	{
+		if (is_closed_) {
+			reconnect_();
 		}
 
 		if (::send(
-				_handle.get(), 
+				handle_.get(), 
 				reinterpret_cast<char const*>(data.data()), 
 				static_cast<int>(data.size()), 
 				0
@@ -306,21 +310,21 @@ public:
 	auto read(std::span<std::byte> const buffer, bool const is_nonblocking = false) 
 		-> std::variant<ConnectionClosed, std::size_t>
 	{
-		if (_is_closed) {
+		if (is_closed_) {
 			return std::size_t{};
 		}
 
 		set_is_nonblocking(is_nonblocking);
 
 		if (auto const receive_result = recv(
-				_handle.get(), 
+				handle_.get(), 
 				reinterpret_cast<char*>(buffer.data()), 
 				static_cast<int>(buffer.size()), 
 				0
 			); receive_result >= 0)
 		{
 			if (receive_result == 0) {
-				_is_closed = true;
+				is_closed_ = true;
 				return ConnectionClosed{};
 			} 
 			return static_cast<std::size_t>(receive_result);
@@ -340,15 +344,15 @@ public:
 	}
 
 	RawSocket(std::string_view const server, Port const port) :
-		_address_info{_get_address_info(server, port)},
-		_handle{_create_handle()}
+		address_info_{get_address_info_(server, port)},
+		handle_{create_handle_()}
 	{}
 
 private:
 	using AddressInfo = std::unique_ptr<addrinfoW, decltype([](auto p){FreeAddrInfoW(p);})>;
 
 	[[nodiscard]]
-	static AddressInfo _get_address_info(std::string_view const server, Port const port) {
+	static AddressInfo get_address_info_(std::string_view const server, Port const port) {
 		auto const wide_server_name = utils::win::utf8_to_wide(server);
 		auto const wide_port_string = std::to_wstring(port);
 		auto const hints = addrinfoW{
@@ -374,7 +378,7 @@ private:
 	}
 
 	[[nodiscard]]
-	SocketHandle _create_handle() const {
+	SocketHandle create_handle_() const {
 		auto const handle_error = [](auto const error_message) {
 			if (auto const error_code = WSAGetLastError(); error_code != WSAEINPROGRESS) {
 				utils::throw_connection_error(error_message, error_code);
@@ -385,9 +389,9 @@ private:
 
 		auto socket_handle = SocketHandle{};
 		while ((socket_handle = socket(
-				_address_info->ai_family, 
-				_address_info->ai_socktype, 
-				_address_info->ai_protocol
+				address_info_->ai_family, 
+				address_info_->ai_socktype, 
+				address_info_->ai_protocol
 			)).get() == INVALID_SOCKET) 
 		{
 			handle_error("Failed to create socket");
@@ -395,8 +399,8 @@ private:
 
 		while (connect(
 				socket_handle.get(), 
-				_address_info->ai_addr, 
-				static_cast<int>(_address_info->ai_addrlen)
+				address_info_->ai_addr, 
+				static_cast<int>(address_info_->ai_addrlen)
 			) == SOCKET_ERROR)
 		{
 			handle_error("Failed to connect socket");
@@ -405,16 +409,16 @@ private:
 		return socket_handle;
 	}
 	
-	void _reconnect() {
-		_handle = _create_handle();
-		_is_closed = false;
+	void reconnect_() {
+		handle_ = create_handle_();
+		is_closed_ = false;
 	}
 
-	WinSockLifetime _api_lifetime;
-	AddressInfo _address_info;
-	SocketHandle _handle;
-	bool _is_nonblocking{false};
-	bool _is_closed{false};
+	WinSockLifetime api_lifetime_;
+	AddressInfo address_info_;
+	SocketHandle handle_;
+	bool is_nonblocking_{false};
+	bool is_closed_{false};
 };
 
 using DllHandle = utils::UniqueHandle<HMODULE, decltype([](auto h){ FreeLibrary(h); })>;
@@ -504,29 +508,29 @@ public:
 
 	[[nodiscard]]
 	iterator begin() {
-		return _buffer.begin();
+		return buffer_.begin();
 	}
 	[[nodiscard]]
 	iterator end() {
-		return _buffer.end();
+		return buffer_.end();
 	}
 
 	void grow_to_size(std::size_t const new_size) {
-		assert(new_size >= _buffer.size());
+		assert(new_size >= buffer_.size());
 		
 		if (!extra_data.empty()) {
-			auto const extra_data_start = extra_data.data() - _buffer.data();
-			assert(extra_data_start > 0 && extra_data_start < static_cast<std::ptrdiff_t>(_buffer.size()));
-			_buffer.resize(new_size);
-			extra_data = std::span{_buffer}.subspan(extra_data_start, extra_data.size());
+			auto const extra_data_start = extra_data.data() - buffer_.data();
+			assert(extra_data_start > 0 && extra_data_start < static_cast<std::ptrdiff_t>(buffer_.size()));
+			buffer_.resize(new_size);
+			extra_data = std::span{buffer_}.subspan(extra_data_start, extra_data.size());
 		}
 		else {
-			_buffer.resize(new_size);
+			buffer_.resize(new_size);
 		}
 	}
 	[[nodiscard]]
 	std::span<std::byte> get_full_buffer() {
-		return _buffer;
+		return buffer_;
 	}
 
 	[[nodiscard]]
@@ -577,10 +581,10 @@ private:
 	*/
 	static constexpr auto maximum_handshake_message_size = std::size_t{1 << 14};
 
-	utils::DataVector _buffer;
+	utils::DataVector buffer_;
 	
 	explicit TlsMessageReceiveBuffer(std::size_t const size) :
-		_buffer(size)
+		buffer_(size)
 	{}
 };
 
@@ -591,14 +595,14 @@ public:
 		that should be processed as part of the next message.
 	*/
 	std::pair<SecurityContextHandle, TlsMessageReceiveBuffer> operator()() && {
-		do_handshake();
-		return {std::move(_security_context), std::move(_receive_buffer)};
+		do_handshake_();
+		return {std::move(security_context_), std::move(receive_buffer_)};
 	}
 
 	[[nodiscard]]
 	SchannelConnectionInitializer(RawSocket* const socket, std::string_view const server) :
-		_socket{socket},
-		_server_name{utils::win::utf8_to_wide(server)}
+		socket_{socket},
+		server_name_{utils::win::utf8_to_wide(server)}
 	{}
 	~SchannelConnectionInitializer() = default;
 
@@ -618,22 +622,22 @@ private:
 		})
 	>;
 
-	void do_handshake() {
-		if (auto const [return_code, output_buffer] = process_handshake_data({});
+	void do_handshake_() {
+		if (auto const [return_code, output_buffer] = process_handshake_data_({});
 			return_code != SEC_I_CONTINUE_NEEDED) // First call should always yield this return code.
 		{
 			utils::throw_connection_error("Schannel TLS handshake initialization failed", return_code, true);
 		}
-		else send_handshake_message(output_buffer);
+		else send_handshake_message_(output_buffer);
 
 		auto offset = std::size_t{};
 		while (true) {
-			auto const read_span = read_response(offset);
-			if (auto const [return_code, output_buffer] = process_handshake_data(read_span);
+			auto const read_span = read_response_(offset);
+			if (auto const [return_code, output_buffer] = process_handshake_data_(read_span);
 				return_code == SEC_I_CONTINUE_NEEDED)
 			{
 				if (output_buffer->cbBuffer) {
-					send_handshake_message(output_buffer);
+					send_handshake_message_(output_buffer);
 				}
 				offset = 0;
 			}
@@ -652,19 +656,19 @@ private:
 	/*
 		Returns a span over the total read data.
 	*/
-	std::span<std::byte> read_response(std::size_t const offset = {}) {
-		auto const buffer_span = _receive_buffer.get_full_buffer();
+	std::span<std::byte> read_response_(std::size_t const offset = {}) {
+		auto const buffer_span = receive_buffer_.get_full_buffer();
 		
-		if (!_receive_buffer.extra_data.empty()) {
+		if (!receive_buffer_.extra_data.empty()) {
 			assert(offset == 0);
 			
-			auto const extra_data_size = _receive_buffer.extra_data.size();
-			std::ranges::copy_backward(_receive_buffer.extra_data, buffer_span.begin() + extra_data_size);
+			auto const extra_data_size = receive_buffer_.extra_data.size();
+			std::ranges::copy_backward(receive_buffer_.extra_data, buffer_span.begin() + extra_data_size);
 
-			_receive_buffer.extra_data = {};
+			receive_buffer_.extra_data = {};
 			return buffer_span.first(extra_data_size);
 		}
-		else if (auto const read_result = _socket->read(buffer_span.subspan(offset));
+		else if (auto const read_result = socket_->read(buffer_span.subspan(offset));
 			std::holds_alternative<ConnectionClosed>(read_result)) 
 		{
 			throw errors::ConnectionFailed{"The connection closed unexpectedly while reading handshake data.", true};
@@ -678,7 +682,7 @@ private:
 		SECURITY_STATUS status_code;
 		HandshakeOutputBuffer output_buffer;
 	};
-	HandshakeProcessResult process_handshake_data(std::span<std::byte> const input_buffer) {
+	HandshakeProcessResult process_handshake_data_(std::span<std::byte> const input_buffer) {
 		constexpr auto request_flags = ISC_REQ_SEQUENCE_DETECT | ISC_REQ_REPLAY_DETECT |
 			ISC_REQ_CONFIDENTIALITY | ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_STREAM;
 
@@ -706,15 +710,15 @@ private:
 		unsigned long returned_flags;
 
 		auto const return_code = sspi_library.functions->InitializeSecurityContextW(
-			&_credentials.get(),
-			_security_context ? &_security_context : nullptr, // Null on first call, input security context handle
-			_server_name.data(),
+			&credentials_.get(),
+			security_context_ ? &security_context_ : nullptr, // Null on first call, input security context handle
+			server_name_.data(),
 			request_flags,
 			0, // Reserved
 			0, // Not used with Schannel
 			input_buffer.empty() ? nullptr : &input_buffer_description, // Null on first call
 			0, // Reserved
-			&_security_context, // Output security context handle
+			&security_context_, // Output security context handle
 			&output_buffer_description,
 			&returned_flags,
 			nullptr // Don't care about expiration date right now
@@ -726,11 +730,11 @@ private:
 
 		return HandshakeProcessResult{[&]{
 			if (input_buffers[1].BufferType == SECBUFFER_EXTRA) {
-				_receive_buffer.extra_data = input_buffer.last(input_buffers[1].cbBuffer);
+				receive_buffer_.extra_data = input_buffer.last(input_buffers[1].cbBuffer);
 			}
 			
 			if (return_code == SEC_I_COMPLETE_AND_CONTINUE || return_code == SEC_I_COMPLETE_NEEDED) {
-				sspi_library.functions->CompleteAuthToken(&_security_context, &output_buffer_description);
+				sspi_library.functions->CompleteAuthToken(&security_context_, &output_buffer_description);
 
 				if (return_code == SEC_I_COMPLETE_AND_CONTINUE) {
 					return SEC_I_CONTINUE_NEEDED;
@@ -740,15 +744,15 @@ private:
 			return return_code;
 		}(), HandshakeOutputBuffer{output_buffers[0]}};
 	}
-	void send_handshake_message(HandshakeOutputBuffer const& message_buffer) {
-		_socket->write(std::span{
+	void send_handshake_message_(HandshakeOutputBuffer const& message_buffer) {
+		socket_->write(std::span{
 			static_cast<std::byte const*>(message_buffer->pvBuffer), 
 			static_cast<std::size_t>(message_buffer->cbBuffer)
 		});
 	}
 
 	[[nodiscard]]
-	static CredentialsHandle aquire_credentials_handle() {
+	static CredentialsHandle aquire_credentials_handle_() {
 		auto credentials_data = SCHANNEL_CRED{
 			.dwVersion = SCHANNEL_CRED_VERSION,
 		};
@@ -773,22 +777,22 @@ private:
 		return CredentialsHandle{credentials_handle};
 	}
 
-	CredentialsHandle _credentials{aquire_credentials_handle()};
-	RawSocket* _socket;
-	std::wstring _server_name;
+	CredentialsHandle credentials_{aquire_credentials_handle_()};
+	RawSocket* socket_;
+	std::wstring server_name_;
 
-	SecurityContextHandle _security_context;
-	TlsMessageReceiveBuffer _receive_buffer{TlsMessageReceiveBuffer::allocate_new()};
+	SecurityContextHandle security_context_;
+	TlsMessageReceiveBuffer receive_buffer_{TlsMessageReceiveBuffer::allocate_new()};
 };
 
 class TlsSocket {
 public:
 	void write(std::span<std::byte const> data) {
 		while (!data.empty()) {
-			auto const message_length = std::min(data.size(), static_cast<std::size_t>(_stream_sizes.cbMaximumMessage));
+			auto const message_length = std::min(data.size(), static_cast<std::size_t>(stream_sizes_.cbMaximumMessage));
 
-			auto const output_buffer = _encrypt_message(data.first(message_length));
-			_raw_socket->write(output_buffer);
+			auto const output_buffer = encrypt_message_(data.first(message_length));
+			raw_socket_->write(output_buffer);
 
 			data = data.subspan(message_length);
 		}
@@ -798,17 +802,17 @@ public:
 	auto read(std::span<std::byte> const buffer, bool const is_nonblocking = false) 
 		-> std::variant<ConnectionClosed, std::size_t>
 	{
-		if (_decrypted_message_left.empty()) {
-			auto const receive_buffer_span = _receive_buffer.get_full_buffer();
+		if (decrypted_message_left_.empty()) {
+			auto const receive_buffer_span = receive_buffer_.get_full_buffer();
 			auto read_offset = std::size_t{};
 			
 			while (true) {
-				if (auto const read_result = _read_encrypted_data(read_offset, is_nonblocking);
+				if (auto const read_result = read_encrypted_data_(read_offset, is_nonblocking);
 					std::holds_alternative<ConnectionClosed>(read_result))
 				{
 					return read_result;
 				}
-				else if (_decrypt_message(receive_buffer_span.first(read_offset + std::get<std::size_t>(read_result)))
+				else if (decrypt_message_(receive_buffer_span.first(read_offset + std::get<std::size_t>(read_result)))
 					|| is_nonblocking)
 				{
 					break;
@@ -818,13 +822,13 @@ public:
 				}
 			}
 		}
-		if (_decrypted_message_left.empty()) {
+		if (decrypted_message_left_.empty()) {
 			return std::size_t{};
 		}
 		
-		auto const size = std::min(_decrypted_message_left.size(), buffer.size());
-		std::ranges::copy(_decrypted_message_left.first(size), buffer.begin());
-		_decrypted_message_left = _decrypted_message_left.subspan(size);
+		auto const size = std::min(decrypted_message_left_.size(), buffer.size());
+		std::ranges::copy(decrypted_message_left_.first(size), buffer.begin());
+		decrypted_message_left_ = decrypted_message_left_.subspan(size);
 		
 		return size;
 	}
@@ -835,53 +839,54 @@ public:
 		return read(buffer, true);
 	}
 
-	TlsSocket(std::string_view const server, Port const port) {
-		_initialize_connection(server, port);
+	TlsSocket(std::string_view const server, Port const port) 
+	{
+		initialize_connection_(server, port);
 	}
 
 private:
-	void _initialize_connection(std::string_view const server, Port const port) {
-		if (_raw_socket) {
+	void initialize_connection_(std::string_view const server, Port const port) {
+		if (raw_socket_) {
 			return;
 		}
 
-		_raw_socket = std::make_unique<RawSocket>(server, port);
+		raw_socket_ = std::make_unique<RawSocket>(server, port);
 
-		std::tie(_security_context, _receive_buffer) = SchannelConnectionInitializer{_raw_socket.get(), server}();
-		_initialize_stream_sizes();
+		std::tie(security_context_, receive_buffer_) = SchannelConnectionInitializer{raw_socket_.get(), server}();
+		initialize_stream_sizes_();
 	}
 
-	void _initialize_stream_sizes() {
-		if (auto const result = sspi_library.functions->QueryContextAttributesW(&_security_context, SECPKG_ATTR_STREAM_SIZES, &_stream_sizes);
+	void initialize_stream_sizes_() {
+		if (auto const result = sspi_library.functions->QueryContextAttributesW(&security_context_, SECPKG_ATTR_STREAM_SIZES, &stream_sizes_);
 			result != SEC_E_OK) 
 		{
 			utils::throw_connection_error("Failed to query Schannel security context stream sizes", result, true);
 		}
-		_receive_buffer.grow_to_size(_stream_sizes.cbHeader + _stream_sizes.cbMaximumMessage + _stream_sizes.cbTrailer);
+		receive_buffer_.grow_to_size(stream_sizes_.cbHeader + stream_sizes_.cbMaximumMessage + stream_sizes_.cbTrailer);
 	}
 
 	[[nodiscard]]
-	utils::DataVector _encrypt_message(std::span<std::byte const> const data) {
+	utils::DataVector encrypt_message_(std::span<std::byte const> const data) {
 		// https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-encryptmessage
 
-		auto full_buffer = utils::DataVector(_stream_sizes.cbHeader + data.size() + _stream_sizes.cbTrailer);
-		std::ranges::copy(data, full_buffer.begin() + _stream_sizes.cbHeader);
+		auto full_buffer = utils::DataVector(stream_sizes_.cbHeader + data.size() + stream_sizes_.cbTrailer);
+		std::ranges::copy(data, full_buffer.begin() + stream_sizes_.cbHeader);
 		
 		auto buffers = std::array{
 			SecBuffer{
-				.cbBuffer = _stream_sizes.cbHeader,
+				.cbBuffer = stream_sizes_.cbHeader,
 				.BufferType = SECBUFFER_STREAM_HEADER,
 				.pvBuffer = full_buffer.data(),
 			},
 			SecBuffer{
 				.cbBuffer = static_cast<unsigned long>(data.size()),
 				.BufferType = SECBUFFER_DATA,
-				.pvBuffer = full_buffer.data() + _stream_sizes.cbHeader,
+				.pvBuffer = full_buffer.data() + stream_sizes_.cbHeader,
 			},
 			SecBuffer{
-				.cbBuffer = _stream_sizes.cbTrailer,
+				.cbBuffer = stream_sizes_.cbTrailer,
 				.BufferType = SECBUFFER_STREAM_TRAILER,
-				.pvBuffer = full_buffer.data() + _stream_sizes.cbHeader + data.size(),
+				.pvBuffer = full_buffer.data() + stream_sizes_.cbHeader + data.size(),
 			},
 			// Empty buffer that must be supplied at the end.
 			SecBuffer{},
@@ -889,7 +894,7 @@ private:
 
 		auto buffers_description = create_schannel_buffers_description(buffers);
 
-		if (auto const result = sspi_library.functions->EncryptMessage(&_security_context, 0, &buffers_description, 0);
+		if (auto const result = sspi_library.functions->EncryptMessage(&security_context_, 0, &buffers_description, 0);
 			result != SEC_E_OK) 
 		{
 			utils::throw_connection_error("Failed to encrypt TLS message", result, true);
@@ -899,28 +904,28 @@ private:
 	}
 
 	[[nodiscard]]
-	auto _read_encrypted_data(std::size_t const offset, bool const is_nonblocking) 
+	auto read_encrypted_data_(std::size_t const offset, bool const is_nonblocking) 
 		-> std::variant<ConnectionClosed, std::size_t>
 	{
-		auto const buffer_span = _receive_buffer.get_full_buffer();
+		auto const buffer_span = receive_buffer_.get_full_buffer();
 		
-		if (!_receive_buffer.extra_data.empty()) {
+		if (!receive_buffer_.extra_data.empty()) {
 			assert(offset == 0);
 			
-			auto const extra_data_size = _receive_buffer.extra_data.size();
-			std::ranges::copy_backward(_receive_buffer.extra_data, buffer_span.begin() + extra_data_size);
+			auto const extra_data_size = receive_buffer_.extra_data.size();
+			std::ranges::copy_backward(receive_buffer_.extra_data, buffer_span.begin() + extra_data_size);
 
-			_receive_buffer.extra_data = {};
+			receive_buffer_.extra_data = {};
 			return extra_data_size;
 		}
 		else {
-			return _raw_socket->read(buffer_span.subspan(offset), is_nonblocking);
+			return raw_socket_->read(buffer_span.subspan(offset), is_nonblocking);
 		}
 	}
 
 	// Returns false if the encrypted message was incomplete
 	[[nodiscard]]
-	bool _decrypt_message(std::span<std::byte> const message) {
+	bool decrypt_message_(std::span<std::byte> const message) {
 		// https://docs.microsoft.com/en-us/windows/win32/secauthn/stream-contexts
 		auto buffers = std::array{
 			SecBuffer{ // This will hold the message header afterwards
@@ -934,15 +939,15 @@ private:
 		};
 		auto message_buffer_description = create_schannel_buffers_description(buffers);
 
-		if (auto const status_code = sspi_library.functions->DecryptMessage(&_security_context, &message_buffer_description, 0, nullptr);
+		if (auto const status_code = sspi_library.functions->DecryptMessage(&security_context_, &message_buffer_description, 0, nullptr);
 			status_code == SEC_E_OK)
 		{
-			_decrypted_message_left = {static_cast<std::byte const*>(buffers[1].pvBuffer), static_cast<std::size_t>(buffers[1].cbBuffer)};
+			decrypted_message_left_ = {static_cast<std::byte const*>(buffers[1].pvBuffer), static_cast<std::size_t>(buffers[1].cbBuffer)};
 
 			// https://docs.microsoft.com/en-us/windows/win32/secauthn/extra-buffers-returned-by-schannel
 			// Data from the next message. Always at the end.
 			if (buffers[3].BufferType == SECBUFFER_EXTRA) {
-				_receive_buffer.extra_data = message.last(buffers[3].cbBuffer);
+				receive_buffer_.extra_data = message.last(buffers[3].cbBuffer);
 			}
 			return true;
 		}
@@ -954,17 +959,17 @@ private:
 		}
 	}
 
-	std::unique_ptr<RawSocket> _raw_socket;
+	std::unique_ptr<RawSocket> raw_socket_;
 
-	SecurityContextHandle _security_context;
+	SecurityContextHandle security_context_;
 	
-	SecPkgContext_StreamSizes _stream_sizes;
+	SecPkgContext_StreamSizes stream_sizes_;
 
-	TlsMessageReceiveBuffer _receive_buffer;
+	TlsMessageReceiveBuffer receive_buffer_;
 
 	// This is the part of the message buffer that contains the 
 	// rest of the decrypted message data that has not been read yet.
-	std::span<std::byte const> _decrypted_message_left;
+	std::span<std::byte const> decrypted_message_left_;
 };
 
 #endif // _WIN32
@@ -987,40 +992,40 @@ using SocketHandle = utils::UniqueHandle<
 class RawSocket {
 public:
 	void make_nonblocking() {
-		if (!_is_nonblocking) {
-			auto const flags = fcntl(_handle.get(), F_GETFL);
-			if (-1 == fcntl(_handle.get(), F_SETFL, flags | O_NONBLOCK)) {
+		if (!is_nonblocking_) {
+			auto const flags = fcntl(handle_.get(), F_GETFL);
+			if (-1 == fcntl(handle_.get(), F_SETFL, flags | O_NONBLOCK)) {
 				utils::throw_connection_error("Failed to turn on nonblocking mode on socket");
 			}
-			_is_nonblocking = true;
+			is_nonblocking_ = true;
 		}
 	}
 	void make_blocking() {
-		if (_is_nonblocking) {
-			auto const flags = fcntl(_handle.get(), F_GETFL);
-			if (-1 == fcntl(_handle.get(), F_SETFL, flags & ~O_NONBLOCK)) {
+		if (is_nonblocking_) {
+			auto const flags = fcntl(handle_.get(), F_GETFL);
+			if (-1 == fcntl(handle_.get(), F_SETFL, flags & ~O_NONBLOCK)) {
 				utils::throw_connection_error("Failed to turn off nonblocking mode on socket");
 			}
-			_is_nonblocking = false;
+			is_nonblocking_ = false;
 		}
 	}
 	[[nodiscard]]
 	PosixSocketHandle get_posix_handle() const {
-		return _handle.get();
+		return handle_.get();
 	}
 	
-	void _reconnect() {
-		_handle = _create_handle();
-		_is_closed = false;
+	void reconnect_() {
+		handle_ = create_handle_();
+		is_closed_ = false;
 	}
 
 	void write(std::span<std::byte const> const data) {
-		if (_is_closed) {
-			_reconnect();
+		if (is_closed_) {
+			reconnect_();
 		}
 
 		if (::send(
-				_handle.get(),
+				handle_.get(),
 				data.data(),
 				static_cast<int>(data.size()),
 				0
@@ -1033,19 +1038,19 @@ public:
 	auto read(std::span<std::byte> const buffer, bool is_nonblocking = false) 
 		-> std::variant<ConnectionClosed, std::size_t> 
 	{
-		if (_is_closed) {
+		if (is_closed_) {
 			return std::size_t{};
 		}
 
 		if (auto const receive_result = recv(
-				_handle.get(), 
+				handle_.get(), 
 				reinterpret_cast<char*>(buffer.data()), 
 				static_cast<int>(buffer.size()),
 				is_nonblocking ? MSG_DONTWAIT : 0
 			); receive_result >= 0)
 		{
 			if (receive_result == 0) {
-				_is_closed = true;
+				is_closed_ = true;
 				return ConnectionClosed{};
 			}
 			return static_cast<std::size_t>(receive_result);
@@ -1063,15 +1068,15 @@ public:
 	}
 
 	RawSocket(std::string_view const server, Port const port) :
-		_address_info{_get_address_info(std::string{server}, port)}, 
-		_handle{_create_handle()}
+		address_info_{get_address_info_(std::string{server}, port)}, 
+		handle_{create_handle_()}
 	{}
 
 private:
 	using AddressInfo = std::unique_ptr<addrinfo, decltype([](auto const p){freeaddrinfo(p);})>;
 
 	[[nodiscard]]
-	static AddressInfo _get_address_info(std::string const server, Port const port) {
+	static AddressInfo get_address_info_(std::string const server, Port const port) {
 		auto const port_string = std::to_string(port);
 		auto const hints = addrinfo{
 			.ai_family = AF_UNSPEC,
@@ -1096,11 +1101,11 @@ private:
 	}
 
 	[[nodiscard]]
-	SocketHandle _create_handle() const {
+	SocketHandle create_handle_() const {
 		auto socket_handle = SocketHandle{::socket(
-			_address_info->ai_family, 
-			_address_info->ai_socktype, 
-			_address_info->ai_protocol
+			address_info_->ai_family, 
+			address_info_->ai_socktype, 
+			address_info_->ai_protocol
 		)};
 		if (!socket_handle) {
 			utils::throw_connection_error("Failed to create socket");
@@ -1108,8 +1113,8 @@ private:
 
 		while (::connect(
 				socket_handle.get(), 
-				_address_info->ai_addr, 
-				static_cast<int>(_address_info->ai_addrlen)
+				address_info_->ai_addr, 
+				static_cast<int>(address_info_->ai_addrlen)
 			) == -1)
 		{
 			if (auto const error_code = errno; error_code != EINPROGRESS) {
@@ -1122,22 +1127,22 @@ private:
 		return socket_handle;
 	}
 
-	AddressInfo _address_info;
+	AddressInfo address_info_;
 
-	SocketHandle _handle;
+	SocketHandle handle_;
 
-	bool _is_nonblocking{false};
+	bool is_nonblocking_{false};
 
-	bool _is_closed{false};
+	bool is_closed_{false};
 };
 
 class TlsSocket {
 public:
 	void write(std::span<std::byte const> const data) {
-		_ensure_connected();
+		ensure_connected_();
 		
 		if (SSL_write(
-				_tls_connection.get(),
+				tls_connection_.get(),
 				data.data(),
 				static_cast<int>(data.size())
 			) == -1)
@@ -1149,19 +1154,19 @@ public:
 	auto read(std::span<std::byte> const buffer) 
 		-> std::variant<ConnectionClosed, std::size_t> 
 	{
-		if (_is_closed) {
+		if (is_closed_) {
 			return std::size_t{};
 		}
 		
-		_raw_socket->make_blocking();
+		raw_socket_->make_blocking();
 		if (auto const read_result = SSL_read(
-				_tls_connection.get(),
+				tls_connection_.get(),
 				buffer.data(),
 				static_cast<int>(buffer.size())
 			); read_result >= 0) 
 		{
 			if (read_result == 0) {
-				_is_closed = true;
+				is_closed_ = true;
 				return ConnectionClosed{};
 			}
 			return static_cast<std::size_t>(read_result);
@@ -1172,20 +1177,20 @@ public:
 	auto read_available(std::span<std::byte> const buffer) 
 		-> std::variant<ConnectionClosed, std::size_t> 
 	{
-		if (_is_closed) {
+		if (is_closed_) {
 			return std::size_t{};
 		}
 		
-		_raw_socket->make_nonblocking();
+		raw_socket_->make_nonblocking();
 		if (auto const read_result = SSL_read(
-				_tls_connection.get(),
+				tls_connection_.get(),
 				buffer.data(),
 				static_cast<int>(buffer.size())
 			); read_result > 0)
 		{
 			return static_cast<std::size_t>(read_result);
 		}
-		else switch (auto const error_code = SSL_get_error(_tls_connection.get(), read_result)) {
+		else switch (auto const error_code = SSL_get_error(tls_connection_.get(), read_result)) {
 			case SSL_ERROR_WANT_READ:
 			case SSL_ERROR_WANT_WRITE:
 				// No available data to read at the moment.
@@ -1193,7 +1198,7 @@ public:
 			case SSL_ERROR_ZERO_RETURN:
 			case SSL_ERROR_SYSCALL:
 				if (errno == 0) {
-					_is_closed = true;
+					is_closed_ = true;
 					// Peer shut down the connection.
 					return ConnectionClosed{};
 				}
@@ -1205,103 +1210,103 @@ public:
 	}
 
 	TlsSocket(std::string_view const server, Port const port) {
-		_initialize_connection(server, port);
+		initialize_connection_(server, port);
 	}
 
 private:
 	using TlsContext = std::unique_ptr<SSL_CTX, decltype([](auto x){SSL_CTX_free(x);})>;
 	using TlsConnection = std::unique_ptr<SSL, decltype([](auto x){SSL_free(x);})>;
 
-	static void _throw_tls_error() {
+	static void throw_tls_error_() {
 		throw errors::ConnectionFailed{utils::unix::get_openssl_error_string(), true};
 	}
 
-	void _ensure_connected() {
-		if (_is_closed) {
-			_raw_socket->_reconnect();
-			_update_tls_socket_handle();
-			// _connect();
+	void ensure_connected_() {
+		if (is_closed_) {
+			raw_socket_->reconnect_();
+			update_tls_socket_handle_();
+			// connect_();
 		}
 	}
 
-	void _initialize_connection(std::string_view const server, Port const port) {
-		if (_raw_socket) {
+	void initialize_connection_(std::string_view const server, Port const port) {
+		if (raw_socket_) {
 			return;
 		}
 
-		_configure_tls_context();
-		_configure_tls_connection(std::string{server}, port);
-		_connect();
+		configure_tls_context_();
+		configure_tls_connection_(std::string{server}, port);
+		connect_();
 	}
 	
-	void _configure_tls_context() {
-		// SSL_CTX_set_options(_tls_context.get(), SSL_OP_ALL);
+	void configure_tls_context_() {
+		// SSL_CTX_set_options(tls_context_.get(), SSL_OP_ALL);
 
-		if (1 != SSL_CTX_set_default_verify_paths(_tls_context.get())) {
-			_throw_tls_error();
+		if (1 != SSL_CTX_set_default_verify_paths(tls_context_.get())) {
+			throw_tls_error_();
 		}
-		SSL_CTX_set_read_ahead(_tls_context.get(), true);
+		SSL_CTX_set_read_ahead(tls_context_.get(), true);
 	}
 
-	void _configure_tls_connection(std::string const server, Port const port) {
+	void configure_tls_connection_(std::string const server, Port const port) {
 		auto const host_name_c_string = server.data();
 
 		// For SNI (Server Name Identification)
 		// The macro casts the string to a void* for some reason. Ew.
 		// The casts are to suppress warnings about it.
-		if (1 != SSL_set_tlsext_host_name(_tls_connection.get(), reinterpret_cast<void*>(const_cast<char*>(host_name_c_string)))) {
-			_throw_tls_error();
+		if (1 != SSL_set_tlsext_host_name(tls_connection_.get(), reinterpret_cast<void*>(const_cast<char*>(host_name_c_string)))) {
+			throw_tls_error_();
 		}
 		// Configure automatic hostname check
-		if (1 != SSL_set1_host(_tls_connection.get(), host_name_c_string)) {
-			_throw_tls_error();
+		if (1 != SSL_set1_host(tls_connection_.get(), host_name_c_string)) {
+			throw_tls_error_();
 		}
 
 		// Set the socket to be used by the tls connection
-		_raw_socket = std::make_unique<RawSocket>(server, port);
-		_update_tls_socket_handle();
+		raw_socket_ = std::make_unique<RawSocket>(server, port);
+		update_tls_socket_handle_();
 	}
 
-	void _update_tls_socket_handle() {
-		if (1 != SSL_set_fd(_tls_connection.get(), _raw_socket->get_posix_handle())) {
-			_throw_tls_error();
+	void update_tls_socket_handle_() {
+		if (1 != SSL_set_fd(tls_connection_.get(), raw_socket_->get_posix_handle())) {
+			throw_tls_error_();
 		}
 	}
 
-	void _connect() {
-		SSL_connect(_tls_connection.get());
+	void connect_() {
+		SSL_connect(tls_connection_.get());
 
 		// Just to check that a certificate was presented by the server
-		if (auto const certificate = SSL_get_peer_certificate(_tls_connection.get())) {
+		if (auto const certificate = SSL_get_peer_certificate(tls_connection_.get())) {
 			X509_free(certificate);
 		}
-		else _throw_tls_error();
+		else throw_tls_error_();
 
 		// Get result of the certificate verification
-		auto const verify_result = SSL_get_verify_result(_tls_connection.get());
+		auto const verify_result = SSL_get_verify_result(tls_connection_.get());
 		if (X509_V_OK != verify_result) {
-			_throw_tls_error();
+			throw_tls_error_();
 		}
 	}
 
-	std::unique_ptr<RawSocket> _raw_socket;
-	bool _is_closed{false};
+	std::unique_ptr<RawSocket> raw_socket_;
+	bool is_closed_{false};
 
-	TlsContext _tls_context = []{
+	TlsContext tls_context_ = []{
 		if (auto const method = TLS_client_method()) {
 			if (auto const tls = SSL_CTX_new(method)) {
 				return TlsContext{tls};
 			}
 		}
-		_throw_tls_error();
+		throw_tls_error_();
 		return TlsContext{};
 	}();
 
-	TlsConnection _tls_connection = [this]{
-		if (auto const tls_connection = SSL_new(_tls_context.get())) {
+	TlsConnection tls_connection_ = [this]{
+		if (auto const tls_connection = SSL_new(tls_context_.get())) {
 			return TlsConnection{tls_connection};
 		}
-		_throw_tls_error();
+		throw_tls_error_();
 		return TlsConnection{};
 	}();
 };
@@ -1310,39 +1315,39 @@ private:
 class Socket::Implementation {
 public:
 	void write(std::span<std::byte const> const buffer) {
-		if (std::holds_alternative<RawSocket>(_socket)) {
-			std::get<RawSocket>(_socket).write(buffer);
+		if (std::holds_alternative<RawSocket>(socket_)) {
+			std::get<RawSocket>(socket_).write(buffer);
 		}
-		else std::get<TlsSocket>(_socket).write(buffer);
+		else std::get<TlsSocket>(socket_).write(buffer);
 	}
 	[[nodiscard]]
 	auto read(std::span<std::byte> const buffer)
 		-> std::variant<ConnectionClosed, std::size_t> 
 	{
-		if (std::holds_alternative<RawSocket>(_socket)) {
-			return std::get<RawSocket>(_socket).read(buffer);
+		if (std::holds_alternative<RawSocket>(socket_)) {
+			return std::get<RawSocket>(socket_).read(buffer);
 		}
-		return std::get<TlsSocket>(_socket).read(buffer);
+		return std::get<TlsSocket>(socket_).read(buffer);
 	}
 	[[nodiscard]]
 	auto read_available(std::span<std::byte> const buffer) 
 		-> std::variant<ConnectionClosed, std::size_t> 
 	{
-		if (std::holds_alternative<RawSocket>(_socket)) {
-			return std::get<RawSocket>(_socket).read_available(buffer);
+		if (std::holds_alternative<RawSocket>(socket_)) {
+			return std::get<RawSocket>(socket_).read_available(buffer);
 		}
-		return std::get<TlsSocket>(_socket).read_available(buffer);
+		return std::get<TlsSocket>(socket_).read_available(buffer);
 	}
 
 	Implementation(std::string_view const server, Port const port, bool const is_tls_encrypted) :
-		_socket{select_socket(server, port, is_tls_encrypted)}
+		socket_{select_socket_(server, port, is_tls_encrypted)}
 	{}
 
 private:
 	using SocketVariant = std::variant<RawSocket, TlsSocket>;
 
 	[[nodiscard]]
-	static SocketVariant select_socket(std::string_view const server, Port const port, bool const is_tls_encrypted)
+	static SocketVariant select_socket_(std::string_view const server, Port const port, bool const is_tls_encrypted)
 	{
 		if (port == utils::get_port(Protocol::Https) || is_tls_encrypted) {
 			return TlsSocket{server, port};
@@ -1350,27 +1355,27 @@ private:
 		return RawSocket{server, port};
 	}
 
-	SocketVariant _socket;
+	SocketVariant socket_;
 };
 
 void Socket::write(std::span<std::byte const> data) const {
-	_implementation->write(data);
+	implementation_->write(data);
 }
 
 auto Socket::read(std::span<std::byte> buffer) const 
 	-> std::variant<ConnectionClosed, std::size_t> 
 {
-	return _implementation->read(buffer);
+	return implementation_->read(buffer);
 }
 
 auto Socket::read_available(std::span<std::byte> buffer) const 
 	-> std::variant<ConnectionClosed, std::size_t> 
 {
-	return _implementation->read_available(buffer);
+	return implementation_->read_available(buffer);
 }
 
 Socket::Socket(std::string_view const server, Port const port, bool const is_tls_encrypted) :
-	_implementation{std::make_unique<Implementation>(server, port, is_tls_encrypted)}
+	implementation_{std::make_unique<Implementation>(server, port, is_tls_encrypted)}
 {}
 Socket::~Socket() = default;
 
