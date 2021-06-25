@@ -52,7 +52,7 @@ git clone https://github.com/avocadoboi/cpp20-internet-client.git
 cd cpp20-internet-client
 mkdir build
 cmake . -B build
-cmake --build build --target cpp20_internet_client
+cmake --build build --target cpp20_internet_client --config Release
 sudo cmake --install build
 ```
 You may want to add some flags to the cmake commands, for example the VCPKG toolchain file or a cmake prefix path for OpenSSL on Linux and MacOS. Use the latest GCC or MSVC compiler to build. Run the command prompt as administrator and remove "sudo" in the last command if you are on Windows.
