@@ -36,6 +36,8 @@ using namespace std::chrono_literals;
 //---------------------------------------------------------
 
 #ifdef _WIN32
+#	define NOMINMAX
+
 // Required by SSPI API headers for some reason.
 #	define SECURITY_WIN32
 
@@ -333,8 +335,6 @@ public:
 			return std::size_t{};
 		}
 		else utils::throw_connection_error("Failed to receive data through socket");
-
-		utils::unreachable();
 	}
 	[[nodiscard]]
 	auto read_available(std::span<std::byte> const buffer) 
@@ -444,7 +444,8 @@ struct SspiLibrary {
 			reinterpret_cast<INT_PTR>(GetProcAddress(dll_handle.get(), "InitSecurityInterfaceW"))
 		);
 
-		if (!(functions = init_security_interface())) {
+		functions = init_security_interface();
+		if (!functions) {
 			throw_error();
 		}
 	}
@@ -761,7 +762,7 @@ private:
 		
 		auto const security_status = sspi_library.functions->AcquireCredentialsHandleW(
 			nullptr,
-			UNISP_NAME_W,
+			const_cast<wchar_t*>(UNISP_NAME_W),
 			SECPKG_CRED_OUTBOUND,
 			nullptr,
 			&credentials_data,

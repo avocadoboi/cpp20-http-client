@@ -9,6 +9,13 @@ TEST_CASE("Trying split_url for https://google.com/") {
 	CHECK(host_name == "google.com");
 	CHECK(path == "/");
 }
+TEST_CASE("Trying split_url for https://google.com/ with extra spacing") {
+	auto const [protocol, host_name, path] = utils::split_url("  	\thttps://google.com/ \n ");
+	
+	CHECK(protocol == Protocol::Https);
+	CHECK(host_name == "google.com");
+	CHECK(path == "/");
+}
 
 TEST_CASE("Trying split_url for http://bjornsundin.com/projects/index.html") {
 	auto const [protocol, host_name, path] = utils::split_url("http://bjornsundin.com/projects/index.html");

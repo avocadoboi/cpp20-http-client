@@ -1,4 +1,4 @@
-#include "testing_header.hpp"
+﻿#include "testing_header.hpp"
 
 void test_chunky_body_parser(std::string_view const chunky_body, std::string_view const expected_result) 
 {
@@ -9,9 +9,13 @@ void test_chunky_body_parser(std::string_view const chunky_body, std::string_vie
 
         for (auto pos = std::size_t{};; pos += packet_size)
         {
-            auto const new_data_end = std::min(chunky_body_data.begin() + pos + packet_size, chunky_body_data.end());
+            auto const new_data_end = chunky_body_data.begin() + std::min(pos + packet_size, chunky_body_data.size());
             if (auto const result = parser.parse_new_data(std::span{chunky_body_data.begin() + pos, new_data_end})) {
                 CHECK(utils::data_to_string(std::span{*result}) == expected_result);
+                break;
+            }
+            else if (new_data_end == chunky_body_data.end()) {
+                CHECK(chunky_body_data.empty());
                 break;
             }
         }
@@ -52,5 +56,5 @@ TEST_CASE("Chunked http body parser, invalid input") {
 }
 
 TEST_CASE("Chunked http body parser, empty input") {
-    REQUIRE_THROWS_AS(test_chunky_body_parser("", ""), errors::ResponseParsingFailed);
+    test_chunky_body_parser("", "");
 }

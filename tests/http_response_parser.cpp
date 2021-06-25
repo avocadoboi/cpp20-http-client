@@ -1,4 +1,4 @@
-#include "testing_header.hpp"
+﻿#include "testing_header.hpp"
 
 void test_response_parser(std::string_view const input, http::algorithms::ParsedResponse const& expected_result) 
 {
@@ -14,7 +14,7 @@ void test_response_parser(std::string_view const input, http::algorithms::Parsed
 					response_data.subspan(pos, std::min(response_data.size() - pos, packet_size))
 				))
 			{
-				CHECK(result == expected_result);
+				REQUIRE(result == expected_result);
 				// test_utils::check_http_response(result, expected_result);
 				break;
 			}
@@ -44,14 +44,14 @@ TEST_CASE("Http response parser, conforming line endings") {
 		expected_headers_string + "\r\n\r\n" + expected_body_string;
 
 	auto const expected_result = http::algorithms::ParsedResponse{
-		.status_line = test_utils::ok_status_line,
-		.headers_string = expected_headers_string,
-		.headers = {
+		test_utils::ok_status_line,
+		expected_headers_string,
+		{
 			http::Header{.name="content-length", .value="40"},
 			http::Header{.name="content-type", .value="text/html; charset=UTF-8"},
 			http::Header{.name="date", .value="Sat, 19 Sep 2020 22:49:51 GMT"}
 		},
-		.body_data = string_to_data_vector(expected_body_string),
+		string_to_data_vector(expected_body_string),
 	};
 
 	test_response_parser(input, expected_result);
@@ -74,14 +74,14 @@ TEST_CASE("Http response parser, nonconforming line endings") {
 		expected_headers_string + "\n\n" + expected_body_string;
 
 	auto const expected_result = http::algorithms::ParsedResponse{
-		.status_line = test_utils::ok_status_line,
-		.headers_string = expected_headers_string,
-		.headers = {
+		test_utils::ok_status_line,
+		expected_headers_string,
+		{
 			http::Header{.name="content-length", .value="40"},
 			http::Header{.name="content-type", .value="text/html; charset=UTF-8"},
 			http::Header{.name="date", .value="Sat, 19 Sep 2020 22:49:51 GMT"}
 		},
-		.body_data = string_to_data_vector(expected_body_string),
+		string_to_data_vector(expected_body_string),
 	};
 
 	test_response_parser(input, expected_result);
@@ -91,12 +91,12 @@ TEST_CASE("Http response parser, no body") {
 	constexpr auto input = "HTTP/1.1 404 Not Found\r\n\r\n";
 
 	auto const expected_result = http::algorithms::ParsedResponse{
-		.status_line = http::StatusLine{
+		http::StatusLine{
 			.http_version = "HTTP/1.1", 
 			.status_code = http::StatusCode::NotFound, 
 			.status_message = "Not Found"
 		}, 
-		.headers_string = "HTTP/1.1 404 Not Found"
+		"HTTP/1.1 404 Not Found"
 	};
 	test_response_parser(input, expected_result);
 }
@@ -124,14 +124,14 @@ TEST_CASE("Http response parser, chunked transfer encoding") {
 		expected_headers_string + "\r\n\r\n" + chunked_body_string;
 		
 	auto const expected_result = http::algorithms::ParsedResponse{
-		.status_line = test_utils::ok_status_line,
-		.headers_string = expected_headers_string,
-		.headers = {
+		test_utils::ok_status_line,
+		expected_headers_string,
+		{
 			http::Header{.name="content-type", .value="text/html; charset=UTF-8"},
 			http::Header{.name="date", .value="Sat, 19 Sep 2020 22:49:51 GMT"},
 			http::Header{.name="transfer-encoding", .value="chunked"},
 		},
-		.body_data = string_to_data_vector(expected_body_string),
+		string_to_data_vector(expected_body_string),
 	};
 
 	test_response_parser(input, expected_result);

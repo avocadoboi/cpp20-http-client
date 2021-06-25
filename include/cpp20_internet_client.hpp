@@ -75,7 +75,7 @@ enum class Protocol : Port {
 namespace utils {
 
 /*
-	This is a concept for IsAnyOf<T, U, V, W, ...> where T is equal to any of U, V, W, ...
+	IsAnyOf<T, U, V, W, ...> is true if T is the same type as one or more of U, V, W, ...
 */
 template<typename T, typename ... U>
 concept IsAnyOf = (std::same_as<T, U> || ...);
@@ -85,8 +85,12 @@ concept IsAnyOf = (std::same_as<T, U> || ...);
 template<typename T>
 concept IsTrivial = std::is_trivial_v<T>;
 
+/*
+	Aliasing with types for which IsByte is true is allowed and does not invoke undefined behavior.
+	https://en.cppreference.com/w/cpp/language/reinterpret_cast
+*/
 template<typename T>
-concept IsByte = sizeof(T) == 1 && IsTrivial<std::remove_reference_t<T>>;
+concept IsByte = IsAnyOf<std::remove_cvref_t<T>, std::byte, char, unsigned char>;
 
 //---------------------------------------------------------
 
@@ -177,7 +181,7 @@ public:
 		requires std::equality_comparable<T> 
 		= default;
 
-	constexpr explicit UniqueHandle(T const handle) :
+	constexpr explicit UniqueHandle(T const handle) noexcept :
 		handle_{handle}
 	{}
 	constexpr UniqueHandle& operator=(T const handle) {
@@ -226,7 +230,7 @@ private:
 [[noreturn]]
 inline void unreachable(std::source_location const& source_location = std::source_location::current()) {
 	// TODO: use std::format when supported
-	// std::cerr << std::format("Reached an unreachable code path in file {}, in function {}, on line {}.", 
+	// std::cerr << std::format("Reached an unreachable code path in file {}, in function {}, on line {}.\n", 
 	// 	source_location.file_name(), source_location.function_name(), source_location.line());
 	std::cerr << "Reached an unreachable code path in file " << source_location.file_name() << 
 		", in function " << source_location.function_name() << ", on line " << source_location.line() << ".\n";
@@ -251,20 +255,25 @@ inline void panic(std::string_view const message) {
 
 //---------------------------------------------------------
 
-template<typename Range_, typename ValueType_>
-concept IsInputRangeOf = std::ranges::input_range<Range_> && std::same_as<std::ranges::range_value_t<Range_>, ValueType_>;
+template<typename Range_, typename Value_>
+concept IsInputRangeOf = std::ranges::input_range<Range_> && std::same_as<std::ranges::range_value_t<Range_>, Value_>;
 
-template<typename Range_, typename ValueType_>
-concept IsSizedRangeOf = IsInputRangeOf<Range_, ValueType_> && std::ranges::sized_range<Range_>;
+template<typename Range_, typename Value_>
+concept IsSizedRangeOf = IsInputRangeOf<Range_, Value_> && std::ranges::sized_range<Range_>;
 
 /*
 	Converts a range of contiguous characters to a std::basic_string_view.
+
+	TODO: Remove this in C++23; std::views::split will return contiguous ranges and std::basic_string_view will have a range constructor.
 */
 constexpr auto range_to_string_view = []<
 	/* 
 		std::views::split returns a range of ranges.
 		The ranges unfortunately are not std::ranges::contiguous_range
 		even when the base type is contiguous, so we can't use that constraint.
+
+		This will be fixed :^D 
+		http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p2210r2.html
 	*/
 	IsInputRangeOf<char> Range_
 > (Range_&& range) {
@@ -340,7 +349,7 @@ concept IsByteData = IsByte<T> || std::ranges::range<T> && IsByte<std::ranges::r
 */
 template<IsByteData T>
 [[nodiscard]]
-std::size_t size_of_byte_data(T&& data) {
+std::size_t size_of_byte_data(T const& data) {
 	if constexpr (std::ranges::range<T>) {
 		return std::ranges::distance(data);
 	}
@@ -354,11 +363,11 @@ std::size_t size_of_byte_data(T&& data) {
 */
 template<IsByteData Data_, std::ranges::contiguous_range Range_, IsByte RangeValue_ = std::ranges::range_value_t<Range_>> 
 [[nodiscard]]
-auto copy_byte_data(Data_&& data, Range_&& range) 
+auto copy_byte_data(Data_ const& data, Range_& range) 
 	-> std::ranges::iterator_t<Range_> 
 {
 	if constexpr (IsByte<Data_>) {
-		*std::ranges::begin(range) = *reinterpret_cast<RangeValue_*>(&data);
+		*std::ranges::begin(range) = *reinterpret_cast<RangeValue_ const*>(&data);
 		return std::ranges::begin(range) + 1;
 	}
 	else {
@@ -376,7 +385,7 @@ auto copy_byte_data(Data_&& data, Range_&& range)
 */
 template<IsByteData ... T>
 [[nodiscard]]
-DataVector concatenate_byte_data(T&& ... arguments) {
+DataVector concatenate_byte_data(T const& ... arguments) {
 	auto buffer = DataVector((size_of_byte_data(arguments) + ...));
 	auto buffer_span = std::span{buffer};
 	((buffer_span = std::span{copy_byte_data(arguments, buffer_span), buffer_span.end()}), ...);
@@ -474,22 +483,29 @@ inline SplitUrl split_url(std::string_view const url) noexcept {
 		return {};
 	}
 
+	auto result = SplitUrl{};
+
 	constexpr auto whitespace_characters = " \t\r\n"sv;
+
+	// Find the start position of the protocol.
 	auto start_position = url.find_first_not_of(whitespace_characters);
 	if (start_position == std::string_view::npos) {
 		return {};
 	}
-	
-	auto result = SplitUrl{};
 
 	constexpr auto protocol_suffix = "://"sv;
+
+	// Find the end position of the protocol.
 	if (auto const position = url.find(protocol_suffix, start_position);
 		position != std::string_view::npos) 
 	{
 		result.protocol = get_protocol_from_string(url.substr(start_position, position - start_position));
+
+		// The start position of the domain name.
 		start_position = position + protocol_suffix.length();
 	}
 
+	// Find the end position of the domain name and start of the path.
 	if (auto const position = url.find('/', start_position);
 		position != std::string_view::npos)
 	{
@@ -497,11 +513,13 @@ inline SplitUrl split_url(std::string_view const url) noexcept {
 		start_position = position;
 	}
 	else {
+		// There was nothing after the domain name.
 		result.domain_name = url.substr(start_position);
 		result.path = "/"sv;
 		return result;
 	}
 
+	// Find the end position of the path.
 	auto const end_position = url.find_last_not_of(whitespace_characters) + 1;
 	result.path = url.substr(start_position, end_position - start_position);
 	return result;
@@ -638,7 +656,7 @@ public:
 		whether you want it to be null terminated or not.
 	*/
 	void write(std::string_view const string_view) const {
-		write(utils::string_to_data<std::byte const>(string_view));
+		write(utils::string_to_data<std::byte>(string_view));
 	}
 
 	/*
@@ -968,9 +986,25 @@ struct ParsedResponse {
 
 	[[nodiscard]]
 	bool operator==(ParsedResponse const&) const noexcept = default;
+
+	ParsedResponse() = default;
+	ParsedResponse(StatusLine p_status_line, std::string p_headers_string = {}, std::vector<Header> p_headers = {}, utils::DataVector p_body_data = {}) :
+		status_line{std::move(p_status_line)},
+		headers_string(std::move(p_headers_string)),
+		headers(std::move(p_headers)),
+		body_data(std::move(p_body_data))
+	{}
+
+	ParsedResponse(ParsedResponse&&) = default;
+	ParsedResponse& operator=(ParsedResponse&&) = default;
+
+	ParsedResponse(ParsedResponse const&) = delete;
+	ParsedResponse& operator=(ParsedResponse const&) = delete;
 };
 
 struct ParsedHeadersInterface {
+	virtual ~ParsedHeadersInterface() = default;
+	
 	constexpr virtual ParsedResponse const& get_parsed_response() const noexcept = 0;
 
 	/*
@@ -1173,7 +1207,8 @@ public:
 		return url_;
 	}
 
-	Response() = delete;
+	// std::future requires default constructibility on MSVC... Because of ABI stability.
+	Response() = default;
 	~Response() = default;
 
 	Response(Response const&) = delete;
@@ -1419,9 +1454,7 @@ private:
 		// '\n' line endings are not conformant with the HTTP standard.
 		for (std::string_view const empty_line : {"\r\n\r\n", "\n\n"})
 		{
-			auto const find_start = static_cast<std::size_t>(std::max(std::int64_t{}, 
-				static_cast<std::int64_t>(new_data_start - empty_line.length() + 1)
-			));
+			auto const find_start = new_data_start >= empty_line.length() - 1 ? new_data_start - (empty_line.length() - 1) : std::size_t{};
 			
 			auto const string_view_to_search = utils::data_to_string(std::span{buffer_});
 

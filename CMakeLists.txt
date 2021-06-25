@@ -14,20 +14,31 @@ target_compile_features(cpp20_internet_client PUBLIC cxx_std_20)
 set_target_properties(cpp20_internet_client PROPERTIES CXX_EXTENSIONS off)
 
 if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
+	add_compile_options(/utf-8)
+
 	target_compile_options(cpp20_internet_client PUBLIC
 		/experimental:external
 		/external:anglebrackets
 		/external:W0 
-		/WX /Wall
+		/WX 
+		/W4
 	)
 else ()
 	target_compile_options(cpp20_internet_client PUBLIC
 		-Werror -Wall -Wpedantic -Wextra 
-		-Wimplicit-fallthrough
-		-Wcast-qual -Wconversion
-		
+		-Wduplicated-branches 
+		-Wduplicated-cond 
+		-Wcast-qual 
+		-Wcast-align
+		-Wconversion
+
 		-Wno-parentheses
 		-Wno-missing-field-initializers
+	)
+
+	target_compile_options(cpp20_internet_client PRIVATE
+		-fconcepts-diagnostics-depth=2
+		-fmax-errors=5
 	)
 endif ()
 
@@ -43,7 +54,7 @@ if (WIN32)
 else ()
 	# OpenSSL.
 	find_package(OpenSSL REQUIRED)
-	target_include_directories(cpp20_internet_client PUBLIC "${OPENSSL_INCLUDE_DIR}/../")
+	target_include_directories(cpp20_internet_client PRIVATE "${OPENSSL_INCLUDE_DIR}/../")
 	target_link_libraries(cpp20_internet_client PRIVATE OpenSSL::SSL OpenSSL::Crypto pthread)
 endif ()
 

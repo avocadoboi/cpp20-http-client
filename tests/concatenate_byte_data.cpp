@@ -7,11 +7,19 @@ TEST_CASE("utils::concatenate_byte_data with different types of byte data.") {
     auto const result = utils::concatenate_byte_data(
         std::byte{u8'T'}, "his"sv, ' ', "is"sv, ' ', "a test of my very "sv, 
         std::array{'o', 'w', 'n', ' '},
-        "function called "sv, '\"', u8"concatenate_byte_data"sv, std::byte{'\"'}, std::byte{'.'},
+        "function called "sv, '\"', "concatenate_byte_data"sv, std::byte{'\"'}, std::byte{'.'},
         std::vector{' ', 'S', 'o', 'm', 'e', ' '},
         "numbers: "sv,
         std::array{std::byte{0x5}, std::byte{0x9}, std::byte{0xA1}, std::byte{0xFB}, std::byte{'.'}}
     );
+    CHECK(std::ranges::equal(expected_result, result));
+}
+TEST_CASE("utils::concatenate_byte_data const to non-const.") {
+    auto const byte = std::byte{'A'};
+    auto const array = std::array{'h', 'i'};
+    auto const expected_result = utils::string_to_data<std::byte>("Aho");
+    auto result = utils::concatenate_byte_data(byte, array);
+    result[2] = std::byte{'o'};
     CHECK(std::ranges::equal(expected_result, result));
 }
 

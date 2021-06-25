@@ -1,19 +1,18 @@
-#include "testing_header.hpp"
+﻿#include "testing_header.hpp"
 
 [[nodiscard]]
 auto parse_input_in_chunks(http::algorithms::ResponseParser&& parser, std::string_view const input_string, std::size_t const chunk_size) 
 	-> http::algorithms::ParsedResponse
 {
 	for (auto pos = std::size_t{};; pos += chunk_size) {
-		if (auto const result = parser.parse_new_data(
+		if (auto result = parser.parse_new_data(
 				utils::string_to_data<std::byte>(input_string)
 					.subspan(pos, std::min(input_string.size() - pos, chunk_size))
 			))
 		{
-			return *result;
+			return *std::move(result);
 		}
 	}
-	utils::unreachable();
 }
 
 // The parser is tested separately without callbacks, so there's 
@@ -70,10 +69,10 @@ void test_callbacks_full_input(
 	auto const expected_body_data = utils::string_to_data<std::byte const>(identity_body_string);
 
 	auto const expected_result = http::algorithms::ParsedResponse{
-		.status_line = test_utils::ok_status_line,
-		.headers_string = std::string{headers_string},
-		.headers = headers,
-		.body_data = std::vector(expected_body_data.begin(), expected_body_data.end()),
+		test_utils::ok_status_line,
+		std::string{headers_string},
+		headers,
+		std::vector(expected_body_data.begin(), expected_body_data.end()),
 	};
 
 	for (auto const chunk_size : chunk_sizes_to_test) {
@@ -102,10 +101,8 @@ void test_callbacks_full_input(
 				CHECK(std::ranges::equal(progress.body_data_so_far, expected_body_data.first(progress.body_data_so_far.size())));
 			}
 		};
-		CHECK(
-			parse_input_in_chunks(http::algorithms::ResponseParser{response_callbacks}, input_string, chunk_size) ==
-			expected_result
-		);
+		auto const result = parse_input_in_chunks(http::algorithms::ResponseParser{response_callbacks}, input_string, chunk_size);
+		CHECK(result == expected_result);
 		CHECK(number_of_parsed_packets <= std::ceil(static_cast<double>(input_string.size()) / static_cast<double>(chunk_size)));
 	}
 }
@@ -125,9 +122,9 @@ void test_callbacks_stopping_after_head(
 	auto input_string = (std::string{headers_string} += header_body_separator) += body_string;
 
 	auto const expected_result = http::algorithms::ParsedResponse{
-		.status_line = test_utils::ok_status_line,
-		.headers_string = std::string{headers_string},
-		.headers = headers,
+		test_utils::ok_status_line,
+		std::string{headers_string},
+		headers,
 	};
     
     for (auto const chunk_size : chunk_sizes_to_test) {
