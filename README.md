@@ -45,8 +45,10 @@ int main() {
 
 ## Dependencies
 The only non-native dependency is OpenSSL on Linux and MacOS. It is recommended to use a package manager like VCPKG to install the OpenSSL libraries, especially on MacOS.  
-## Building and installing using CMake
-You can download, build and install the library as shown below. You only need to do this if you want to use the library as an installation as explained later.
+
+## CMake usage
+### Building and installing
+You can download, build and install the library as shown below. You only need to do this if you want to use the library as an installation.
 ```shell
 git clone https://github.com/avocadoboi/cpp20-internet-client.git
 cd cpp20-internet-client
@@ -59,9 +61,6 @@ cmake --install .
 You may want to add some flags to the cmake commands, for example the VCPKG toolchain file or a cmake prefix path for OpenSSL on Linux and MacOS. Use the latest GCC or MSVC compiler to build. You may need to add `sudo` to the install command, or run the command prompt as administrator on Windows.
 
 If you are making changes to the code then use one of the toolchain files in the `cmake` directory to add warning flags. Do this by adding `-DCMAKE_TOOLCHAIN_FILE=cmake/Msvc.cmake` or `-DCMAKE_TOOLCHAIN_FILE=cmake/GccClang.cmake` to the CMake build generation command. These include the VCPKG toolchain file if a `VCPKG_ROOT` environment variable is available.
-
-## Usage with CMake
-The library exports the target ``Cpp20InternetClient::cpp20_internet_client``. There are several ways to include the library in a project.
 
 ### Using the installed library
 To include the installed library in a CMake project, use find_package like so:

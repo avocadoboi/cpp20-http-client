@@ -1485,9 +1485,9 @@ private:
 		// May need to add an offset if this packet is
 		// where the headers end and the body starts.
 		auto const body_parse_start = std::max(new_data_start, body_start_);
-		if (auto const body = chunky_body_parser_->parse_new_data(std::span{buffer_}.subspan(body_parse_start))) 
+		if (auto body = chunky_body_parser_->parse_new_data(std::span{buffer_}.subspan(body_parse_start))) 
 		{
-			result_.body_data = std::move(*body);
+			result_.body_data = *std::move(body);
 
 			if (callbacks_ && (*callbacks_)->handle_body_progress) {
 				auto body_progress = ResponseProgressBody{
