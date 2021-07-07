@@ -15,31 +15,6 @@ set_target_properties(cpp20_internet_client PROPERTIES CXX_EXTENSIONS off)
 
 if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
 	add_compile_options(/utf-8)
-
-	target_compile_options(cpp20_internet_client PUBLIC
-		/experimental:external
-		/external:anglebrackets
-		/external:W0 
-		/WX 
-		/W4
-	)
-else ()
-	target_compile_options(cpp20_internet_client PUBLIC
-		-Werror -Wall -Wpedantic -Wextra 
-		-Wduplicated-branches 
-		-Wduplicated-cond 
-		-Wcast-qual 
-		-Wcast-align
-		-Wconversion
-
-		-Wno-parentheses
-		-Wno-missing-field-initializers
-	)
-
-	target_compile_options(cpp20_internet_client PRIVATE
-		-fconcepts-diagnostics-depth=2
-		-fmax-errors=5
-	)
 endif ()
 
 target_include_directories(cpp20_internet_client PUBLIC 
