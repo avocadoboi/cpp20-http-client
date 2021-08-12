@@ -403,8 +403,7 @@ template<std::integral T>
 std::optional<T> string_to_integral(std::string_view const string, int const base = 10) 
 {
 	auto number_result = T{};
-	auto const char_pointer = string.data();
-	if (std::from_chars(char_pointer, char_pointer + string.size(), number_result, base).ec == std::errc{}) {
+	if (std::from_chars(string.data(), string.data() + string.size(), number_result, base).ec == std::errc{}) {
 		return number_result;
 	}
 	return {};
@@ -428,7 +427,7 @@ constexpr auto dereference_move = std::views::transform([](auto&& x) { return st
 	Transforms a range of chars into its lowercase equivalent.
 */
 constexpr auto ascii_lowercase_transform = std::views::transform([](char const c) { 
-	return static_cast<char>(std::tolower(c));
+	return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 });
 
 /*
