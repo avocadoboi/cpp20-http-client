@@ -1890,8 +1890,13 @@ private:
 		url_{utils::uri_encode(url)},
 		url_components_{utils::split_url(std::string_view{url_})}
 	{
-		if (url_components_.protocol == Protocol::Unknown) {
+		if (url_components_.protocol == Protocol::Unknown) 
+		{
 			url_components_.protocol = default_protocol;
+		}
+		if (url_components_.port == utils::default_port_for_protocol(Protocol::Unknown))
+		{
+			url_components_.port = utils::default_port_for_protocol(url_components_.protocol);
 		}
 	}
 	friend Request get(std::string_view, Protocol);
