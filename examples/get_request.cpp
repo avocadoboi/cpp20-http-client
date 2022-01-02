@@ -50,7 +50,7 @@ void use_response(http::Response const& response) {
 
 	auto const filename = [&]{
 		if (auto const filename = utils::extract_filename(url); filename.empty()) {
-			return utils::split_url(url).domain_name;
+			return utils::split_url(url).host;
 		}
 		else {
 			return filename;

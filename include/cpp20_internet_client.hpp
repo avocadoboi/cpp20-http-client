@@ -442,11 +442,16 @@ constexpr bool equal_ascii_case_insensitive(std::string_view const lhs, std::str
 //---------------------------------------------------------
 
 /*
-	Returns the port that corresponds to the specified protocol.
+	Returns the default port corresponding to the specified protocol.
 */
 [[nodiscard]]
-constexpr Port get_port(Protocol const protocol) noexcept {
+constexpr Port default_port_for_protocol(Protocol const protocol) noexcept {
 	return static_cast<Port>(protocol);
+}
+
+[[nodiscard]]
+constexpr bool is_protocol_tls_encrypted(Protocol const protocol) noexcept {
+	return protocol == Protocol::Https;
 }
 
 /*
@@ -467,23 +472,61 @@ constexpr Protocol get_protocol_from_string(std::string_view const protocol_stri
 /*
 	The result of the split_url function.
 */
-struct SplitUrl {
+struct UrlComponents {
 	Protocol protocol{Protocol::Unknown};
-	std::string_view domain_name, path;
+	std::string_view host;
+	Port port{default_port_for_protocol(Protocol::Unknown)};
+	std::string_view path;
+};
+
+
+struct HostAndPort {
+	std::string_view host;
+	std::optional<Port> port;
 };
 
 /*
-	Splits an URL into a server/domain name and file path.
+	Splits a domain name into a name and an optional port.
+	For example, "localhost:8080" returns "localhost" and 8080, while
+	"google.com" returns "google.com" and no port (std::nullopt).
+*/
+[[nodiscard]]
+inline HostAndPort split_domain_name(std::string_view const domain_name)
+{
+	if (auto const colon_position = domain_name.rfind(':');
+		colon_position != std::string_view::npos)
+	{
+		if (auto const port = string_to_integral<Port>(domain_name.substr(colon_position + 1)))
+		{
+			return HostAndPort{
+				.host{domain_name.substr(0, colon_position)},
+				.port{port}
+			};
+		}
+		else
+		{
+			return HostAndPort{
+				.host{domain_name.substr(0, colon_position)}
+			};
+		}
+	}
+	return HostAndPort{
+		.host{domain_name}
+	};
+}
+
+/*
+	Splits an URL into its components.
 */
 [[nodiscard]] 
-inline SplitUrl split_url(std::string_view const url) noexcept {
+inline UrlComponents split_url(std::string_view const url) noexcept {
 	using namespace std::string_view_literals;
 	
 	if (url.empty()) {
 		return {};
 	}
 
-	auto result = SplitUrl{};
+	auto result = UrlComponents{};
 
 	constexpr auto whitespace_characters = " \t\r\n"sv;
 
@@ -500,21 +543,36 @@ inline SplitUrl split_url(std::string_view const url) noexcept {
 		position != std::string_view::npos) 
 	{
 		result.protocol = get_protocol_from_string(url.substr(start_position, position - start_position));
+		result.port = default_port_for_protocol(result.protocol);
 
 		// The start position of the domain name.
 		start_position = position + protocol_suffix.length();
 	}
 
 	// Find the end position of the domain name and start of the path.
-	if (auto const position = url.find('/', start_position);
-		position != std::string_view::npos)
+	if (auto const slash_position = url.find('/', start_position);
+		slash_position != std::string_view::npos)
 	{
-		result.domain_name = url.substr(start_position, position - start_position);
-		start_position = position;
+		auto [host, port] = split_domain_name(url.substr(start_position, slash_position - start_position));
+		
+		result.host = host;
+
+		if (port) {
+			result.port = *port;
+		}
+
+		start_position = slash_position;
 	}
 	else {
 		// There was nothing after the domain name.
-		result.domain_name = url.substr(start_position);
+		auto [host, port] = split_domain_name(url.substr(start_position));
+
+		result.host = host;
+
+		if (port) {
+			result.port = *port;
+		}
+
 		result.path = "/"sv;
 		return result;
 	}
@@ -1793,7 +1851,7 @@ public:
 private:
 	[[nodiscard]]
 	Socket send_and_get_receive_socket_() {
-		auto socket = open_socket(split_url_.domain_name, utils::get_port(split_url_.protocol));
+		auto socket = open_socket(url_components_.host, url_components_.port, utils::is_protocol_tls_encrypted(url_components_.protocol));
 		
 		using namespace std::string_view_literals;
 
@@ -1806,9 +1864,9 @@ private:
 		auto const request_data = utils::concatenate_byte_data(
 			request_method_to_string(method_),
 			' ',
-			split_url_.path,
+			url_components_.path,
 			" HTTP/1.1\r\nHost: "sv,
-			split_url_.domain_name,
+			url_components_.host,
 			headers_,
 			"\r\n"sv,
 			body_
@@ -1821,7 +1879,7 @@ private:
 	RequestMethod method_;
 
 	std::string url_;
-	utils::SplitUrl split_url_;
+	utils::UrlComponents url_components_;
 
 	std::string headers_{"\r\n"};
 	utils::DataVector body_;
@@ -1831,10 +1889,10 @@ private:
 	Request(RequestMethod const method, std::string_view const url, Protocol const default_protocol) :
 		method_{method},
 		url_{utils::uri_encode(url)},
-		split_url_{utils::split_url(std::string_view{url_})}
+		url_components_{utils::split_url(std::string_view{url_})}
 	{
-		if (split_url_.protocol == Protocol::Unknown) {
-			split_url_.protocol = default_protocol;
+		if (url_components_.protocol == Protocol::Unknown) {
+			url_components_.protocol = default_protocol;
 		}
 	}
 	friend Request get(std::string_view, Protocol);

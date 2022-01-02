@@ -1350,7 +1350,7 @@ private:
 	[[nodiscard]]
 	static SocketVariant select_socket_(std::string_view const server, Port const port, bool const is_tls_encrypted)
 	{
-		if (port == utils::get_port(Protocol::Https) || is_tls_encrypted) {
+		if (is_tls_encrypted) {
 			return TlsSocket{server, port};
 		}
 		return RawSocket{server, port};

@@ -6,9 +6,8 @@
 */
 
 int main() {
-	// If port 443 is used, the data is automatically sent and received over TLS.
-	// If another port is used that you want to use TLS encryption on you can pass an additional true paramter.
-	auto socket = internet_client::open_socket("wss://something", internet_client::Port{443});
+	// If the last parameter is true, the data is sent and received over TLS.
+	auto socket = internet_client::open_socket("wss://something", internet_client::Port{443}, true);
 
 	// Could also use read_available to only read what is currently 
 	// received and ready, and do other stuff while waiting for response data.
