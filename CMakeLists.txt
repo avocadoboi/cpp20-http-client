@@ -10,11 +10,14 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin/)
 add_library(cpp20_internet_client STATIC source/cpp20_internet_client.cpp)
 add_library(Cpp20InternetClient::cpp20_internet_client ALIAS cpp20_internet_client)
 
-target_compile_features(cpp20_internet_client PUBLIC cxx_std_23)
 set_target_properties(cpp20_internet_client PROPERTIES CXX_EXTENSIONS off)
 
 if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
 	add_compile_options(/utf-8)
+	# Concepts are (or were) only available in /std:c++latest, not in /std:c++20
+	target_compile_options(cpp20_internet_client PUBLIC /std:c++latest)
+else ()
+	target_compile_features(cpp20_internet_client PUBLIC cxx_std_20)
 endif ()
 
 target_include_directories(cpp20_internet_client PUBLIC 
