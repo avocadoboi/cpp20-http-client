@@ -36,10 +36,14 @@ using namespace std::chrono_literals;
 //---------------------------------------------------------
 
 #ifdef _WIN32
-#	define NOMINMAX
+#	ifndef NOMINMAX
+#		define NOMINMAX
+#	endif
 
 // Required by SSPI API headers for some reason.
-#	define SECURITY_WIN32
+#	ifndef SECURITY_WIN32
+#		define SECURITY_WIN32
+#	endif
 
 // Windows socket API.
 #	include <winsock2.h>
