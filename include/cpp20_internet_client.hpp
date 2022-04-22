@@ -35,13 +35,17 @@ SOFTWARE.
 #include <iostream>
 #include <memory>
 #include <ranges>
-#include <source_location>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <variant>
+
+#include <version>
+#ifdef __cpp_lib_source_location
+#include <source_location>
+#endif
 
 /*
 Namespaces:
