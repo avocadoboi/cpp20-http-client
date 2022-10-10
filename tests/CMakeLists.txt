@@ -1,9 +1,11 @@
 
 file(GLOB TEST_SOURCES *.cpp)
 
-add_executable(cpp20_internet_client_test ${TEST_SOURCES})
-target_include_directories(cpp20_internet_client_test PRIVATE "../external/catch2/")
-# target_include_directories(cpp20_internet_client_test PRIVATE "../include/")
-target_link_libraries(cpp20_internet_client_test PRIVATE cpp20_internet_client)
+add_executable(cpp20_http_client_test ${TEST_SOURCES})
 
-add_test(NAME unit_tests COMMAND cpp20_internet_client_test)
+target_link_libraries(cpp20_http_client_test PRIVATE cpp20_http_client)
+
+find_package(Catch2 CONFIG REQUIRED)
+target_link_libraries(cpp20_http_client_test PRIVATE Catch2::Catch2 Catch2::Catch2WithMain)
+
+add_test(NAME unit_tests COMMAND cpp20_http_client_test)

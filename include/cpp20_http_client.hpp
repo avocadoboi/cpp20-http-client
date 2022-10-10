@@ -44,22 +44,20 @@ SOFTWARE.
 
 #include <version>
 #ifdef __cpp_lib_source_location
-#include <source_location>
+#	include <source_location>
 #endif
 
 /*
 Namespaces:
 
-internet_client {
+http_client {
 	utils
 	errors
-	http {
-		algorithms
-	}
+	algorithms
 }
 */
 
-namespace internet_client {
+namespace http_client {
 
 using Port = int;
 
@@ -814,8 +812,6 @@ inline Socket open_socket(std::string_view const server, Port const port, bool c
 }
 
 //---------------------------------------------------------
-
-namespace http {
 
 struct Header;
 
@@ -1691,7 +1687,7 @@ inline std::string_view request_method_to_string(RequestMethod const method) {
 
 /*
 	Represents a HTTP request.
-	It is created by calling any of the HTTP verb functions (http::get, http::post, http::put ...)
+	It is created by calling any of the HTTP verb functions (http_client::get, http_client::post, http_client::put ...)
 */
 class Request {
 public:
@@ -1941,7 +1937,7 @@ inline Request put(std::string_view const url, Protocol const default_protocol =
 
 /*
 	Creates a http request.
-	Can be used to do the same things as http::get and http::post, but with more method options.
+	Can be used to do the same things as get() and post(), but with more method options.
 	If url contains a protocol prefix, it is used. Otherwise, default_protocol is used.
 */
 [[nodiscard]]
@@ -1953,6 +1949,4 @@ inline Request make_request(
 	return Request{method, url, default_protocol};
 }
 
-} // namespace http
-
-} // namespace internet_client
+} // namespace http_client

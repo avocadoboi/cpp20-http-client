@@ -1,15 +1,15 @@
-#include <cpp20_internet_client.hpp>
+#include <cpp20_http_client.hpp>
 
-using namespace internet_client;
+using namespace http_client;
 
 using namespace std::chrono_literals;
 
 int main() {
-    auto response = http::get("https://www.youtube.com")
-        .set_raw_progress_callback([](http::ResponseProgressRaw const& progress) {
+    auto response = get("https://www.youtube.com")
+        .set_raw_progress_callback([](ResponseProgressRaw const& progress) {
             std::cout << "Got " << progress.data.size() << " bytes so far.\n";
         })
-        .set_headers_callback([](http::ResponseProgressHeaders& headers) {
+        .set_headers_callback([](ResponseProgressHeaders& headers) {
             std::cout << "Got headers.\n";
             
             std::cout << "Status code: " << static_cast<int>(headers.get_status_code()) << '\n';
@@ -30,8 +30,8 @@ int main() {
 
     std::cout << "Got response!\n\n";
     
-    // Do anything with the http::Response object
-    http::Response const result = response.get();
+    // Do anything with the Response object
+    Response const result = response.get();
 
     for (auto const [name, value] : result.get_headers()) {
         std::cout << '\"' << name << "\" header has value \"" << value << "\".\n";

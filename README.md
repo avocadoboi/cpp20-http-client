@@ -1,9 +1,8 @@
-# C++20 internet client
+# C++20 HTTP client
 
-C++20 internet client is an HTTP/HTTPS client library written in C++20.
+C++20 HTTP client is an HTTP/HTTPS client library written in C++20.
 
 As of now, only GCC and MSVC support all of the C++20 features used in this library. Additionally, there are some C++20 features that are not used in the library because no compiler or standard library yet supports them. However the library will be updated over time as compilers start implementing more of C++20.
-
 
 ## Aims and features
 * User friendly, functional design.
@@ -24,20 +23,18 @@ Note that the fmt library is not a dependency of this library, it's just to simp
 
 See the **examples** directory for more examples.
 ```cpp
-#include <cpp20_internet_client.hpp>
+#include <cpp20_http_client.hpp>
 #include <fmt/format.h>
 
 int main() {
-    using namespace internet_client;
-
     try {
-        auto const response = http::get("https://www.google.com")
+        auto const response = http_client::get("https://www.google.com")
             .add_header({.name="HeaderName", .value="header value"})
             .send();
         fmt::print("Date from server: {}.\n", response.get_header_value("date").value_or("Unknown"));
-        utils::write_to_file(response.get_body(), "index.html");
+        http_client::utils::write_to_file(response.get_body(), "index.html");
     } 
-    catch (errors::ConnectionFailed const& error) {
+    catch (http_client::errors::ConnectionFailed const& error) {
         fmt::print("The connection failed - \"{}\"\n", error.what());
     }
 }
@@ -50,12 +47,12 @@ The only non-native dependency is OpenSSL on Linux and MacOS. It is recommended 
 ### Building and installing
 You can download, build and install the library as shown below. You only need to do this if you want to use the library as an installation.
 ```shell
-git clone https://github.com/avocadoboi/cpp20-internet-client.git
-cd cpp20-internet-client
+git clone https://github.com/avocadoboi/cpp20-http-client.git
+cd cpp20-http-client
 mkdir build
 cd build
 cmake ..
-cmake --build . --target cpp20_internet_client --config Release
+cmake --build . --target cpp20_http_client --config Release
 cmake --install .
 ```
 You may want to add some flags to the cmake commands, for example the VCPKG toolchain file or a cmake prefix path for OpenSSL on Linux and MacOS. Use the latest GCC or MSVC compiler to build. You may need to add `sudo` to the install command, or run the command prompt as administrator on Windows.
@@ -65,18 +62,18 @@ If you are making changes to the code then use one of the toolchain files in the
 ### Using the installed library
 To include the installed library in a CMake project, use find_package like so:
 ```cmake
-find_package(Cpp20InternetClient CONFIG REQUIRED)
-target_link_libraries(target_name PRIVATE Cpp20InternetClient::cpp20_internet_client)
+find_package(Cpp20HttpClient CONFIG REQUIRED)
+target_link_libraries(target_name PRIVATE Cpp20HttpClient::cpp20_http_client)
 ```
 Where target_name is the name of the target to link the library to.
 
 ### Using the library as a subproject
 You can clone the library into your own project and then use it like so:
 ```cmake
-add_subdirectory(external/cpp20-internet-client)
-target_link_libraries(target_name PRIVATE Cpp20InternetClient::cpp20_internet_client)
+add_subdirectory(external/cpp20-http-client)
+target_link_libraries(target_name PRIVATE Cpp20HttpClient::cpp20_http_client)
 ```
-Where target_name is the name of the target to link the library to. "external/cpp20-internet-client" is just an example of where you could put the library in your project.
+Where target_name is the name of the target to link the library to. "external/cpp20-http-client" is just an example of where you could put the library in your project.
 
 ### Using CMake to download and include the library
 You can use the built-in FetchContent CMake module to directly fetch the repository at configure time and link to it:
@@ -84,12 +81,12 @@ You can use the built-in FetchContent CMake module to directly fetch the reposit
 include(FetchContent)
 
 FetchContent_Declare(
-    Cpp20InternetClient
-    GIT_REPOSITORY https://github.com/avocadoboi/cpp20-internet-client.git
+    Cpp20HttpClient
+    GIT_REPOSITORY https://github.com/avocadoboi/cpp20-http-client.git
 )
-FetchContent_MakeAvailable(Cpp20InternetClient)
+FetchContent_MakeAvailable(Cpp20HttpClient)
 
-target_link_libraries(target_name PRIVATE Cpp20InternetClient::cpp20_internet_client)
+target_link_libraries(target_name PRIVATE Cpp20HttpClient::cpp20_http_client)
 ```
 
 ## Development status

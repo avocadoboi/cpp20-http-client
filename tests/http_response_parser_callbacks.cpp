@@ -1,8 +1,8 @@
 ﻿#include "testing_header.hpp"
 
 [[nodiscard]]
-auto parse_input_in_chunks(http::algorithms::ResponseParser&& parser, std::string_view const input_string, std::size_t const chunk_size) 
-	-> http::algorithms::ParsedResponse
+auto parse_input_in_chunks(algorithms::ResponseParser&& parser, std::string_view const input_string, std::size_t const chunk_size) 
+	-> algorithms::ParsedResponse
 {
 	for (auto pos = std::size_t{};; pos += chunk_size) {
 		if (auto result = parser.parse_new_data(
@@ -27,9 +27,9 @@ auto const headers_string_chunked_transfer = std::string{
 	"Transfer-Encoding: chunked"
 };
 auto const headers_chunked_transfer = std::vector{
-	http::Header{.name="content-type", .value="text/html; charset=UTF-8"},
-	http::Header{.name="date", .value="Sat, 19 Sep 2020 22:49:51 GMT"},
-	http::Header{.name="transfer-encoding", .value="chunked"},	
+	Header{.name="content-type", .value="text/html; charset=UTF-8"},
+	Header{.name="date", .value="Sat, 19 Sep 2020 22:49:51 GMT"},
+	Header{.name="transfer-encoding", .value="chunked"},	
 };
 
 auto const headers_string_identity_transfer = std::string{
@@ -39,9 +39,9 @@ auto const headers_string_identity_transfer = std::string{
 	"Content-Length: 40"
 };
 auto const headers_identity_transfer = std::vector{
-	http::Header{.name="content-type", .value="text/html; charset=UTF-8"},
-	http::Header{.name="date", .value="Sat, 19 Sep 2020 22:49:51 GMT"},
-	http::Header{.name="content-length", .value="40"},	
+	Header{.name="content-type", .value="text/html; charset=UTF-8"},
+	Header{.name="date", .value="Sat, 19 Sep 2020 22:49:51 GMT"},
+	Header{.name="content-length", .value="40"},	
 };
 
 constexpr auto identity_body_string = "This is a test\nLine two\n\nAnother line!!!"sv;
@@ -61,14 +61,14 @@ constexpr auto chunk_sizes_to_test = std::array<std::size_t, 5>{1, 8, 32, 128, 5
 
 void test_callbacks_full_input(
 	std::string_view const headers_string,
-	std::vector<http::Header> const& headers,
+	std::vector<Header> const& headers,
 	std::string_view const body_string
 ) {
 	auto const input_string = (std::string{headers_string} += header_body_separator) += body_string;
 
 	auto const expected_body_data = utils::string_to_data<std::byte const>(identity_body_string);
 
-	auto const expected_result = http::algorithms::ParsedResponse{
+	auto const expected_result = algorithms::ParsedResponse{
 		test_utils::ok_status_line,
 		std::string{headers_string},
 		headers,
@@ -78,8 +78,8 @@ void test_callbacks_full_input(
 	for (auto const chunk_size : chunk_sizes_to_test) {
 		auto number_of_parsed_packets = 0;
 
-		auto response_callbacks = http::algorithms::ResponseCallbacks{
-			.handle_raw_progress = [&](http::ResponseProgressRaw& progress) {
+		auto response_callbacks = algorithms::ResponseCallbacks{
+			.handle_raw_progress = [&](ResponseProgressRaw& progress) {
 				CHECK(progress.new_data_start == number_of_parsed_packets*chunk_size);
 
 				auto const input_data = utils::string_to_data<std::byte const>(std::string_view{input_string});
@@ -92,16 +92,16 @@ void test_callbacks_full_input(
 
 				++number_of_parsed_packets;
             },
-			.handle_headers = [&](http::ResponseProgressHeaders& progress) {
+			.handle_headers = [&](ResponseProgressHeaders& progress) {
 				CHECK(progress.get_status_line() == expected_result.status_line);
 				CHECK(progress.get_headers_string() == expected_result.headers_string);
 				CHECK(std::ranges::equal(progress.get_headers(), expected_result.headers));
 			},
-			.handle_body_progress = [&](http::ResponseProgressBody& progress) {
+			.handle_body_progress = [&](ResponseProgressBody& progress) {
 				CHECK(std::ranges::equal(progress.body_data_so_far, expected_body_data.first(progress.body_data_so_far.size())));
 			}
 		};
-		auto const result = parse_input_in_chunks(http::algorithms::ResponseParser{response_callbacks}, input_string, chunk_size);
+		auto const result = parse_input_in_chunks(algorithms::ResponseParser{response_callbacks}, input_string, chunk_size);
 		CHECK(result == expected_result);
 		CHECK(number_of_parsed_packets <= std::ceil(static_cast<double>(input_string.size()) / static_cast<double>(chunk_size)));
 	}
@@ -116,12 +116,12 @@ TEST_CASE("Response parser with callbacks and identity transfer, full input") {
 
 void test_callbacks_stopping_after_head(
 	std::string_view const headers_string, 
-	std::vector<http::Header> const& headers, 
+	std::vector<Header> const& headers, 
 	std::string_view const body_string
 ) {
 	auto input_string = (std::string{headers_string} += header_body_separator) += body_string;
 
-	auto const expected_result = http::algorithms::ParsedResponse{
+	auto const expected_result = algorithms::ParsedResponse{
 		test_utils::ok_status_line,
 		std::string{headers_string},
 		headers,
@@ -130,8 +130,8 @@ void test_callbacks_stopping_after_head(
     for (auto const chunk_size : chunk_sizes_to_test) {
 		auto number_of_parsed_packets = 0;
 		auto got_any_body = false;
-        auto response_callbacks = http::algorithms::ResponseCallbacks{
-            .handle_raw_progress = [&](http::ResponseProgressRaw& progress) {
+        auto response_callbacks = algorithms::ResponseCallbacks{
+            .handle_raw_progress = [&](ResponseProgressRaw& progress) {
 				CHECK(progress.new_data_start == number_of_parsed_packets*chunk_size);
 
 				auto const input_data = utils::string_to_data<std::byte const>(std::string_view{input_string});
@@ -144,16 +144,16 @@ void test_callbacks_stopping_after_head(
 
                 ++number_of_parsed_packets;
             },
-			.handle_headers = [&](http::ResponseProgressHeaders& progress) {
+			.handle_headers = [&](ResponseProgressHeaders& progress) {
 				CHECK(progress.get_parsed_response() == expected_result);
 				progress.stop();
 			},
-			.handle_body_progress = [&](http::ResponseProgressBody&) {
+			.handle_body_progress = [&](ResponseProgressBody&) {
 				got_any_body = true;
 			}
 		};
 		CHECK(
-			parse_input_in_chunks(http::algorithms::ResponseParser{response_callbacks}, input_string, chunk_size) ==
+			parse_input_in_chunks(algorithms::ResponseParser{response_callbacks}, input_string, chunk_size) ==
 			expected_result
 		);
 		CHECK(!got_any_body);

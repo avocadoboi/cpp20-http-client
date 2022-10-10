@@ -5,7 +5,7 @@ void test_chunky_body_parser(std::string_view const chunky_body, std::string_vie
     auto const chunky_body_data = utils::string_to_data<std::byte>(chunky_body);
     for (auto const packet_size : {1, 8, 32, 128, 512, 2048})
     {
-        auto parser = http::algorithms::ChunkyBodyParser{};
+        auto parser = algorithms::ChunkyBodyParser{};
 
         for (auto pos = std::size_t{};; pos += packet_size)
         {

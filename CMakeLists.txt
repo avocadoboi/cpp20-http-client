@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18.0)
-project(Cpp20InternetClient VERSION 2.1.1 LANGUAGES CXX)
+project(Cpp20HttpClient VERSION 2.1.1 LANGUAGES CXX)
 
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib/)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin/)
@@ -7,20 +7,20 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin/)
 #-----------------------------
 # Library target.
 
-add_library(cpp20_internet_client STATIC source/cpp20_internet_client.cpp)
-add_library(Cpp20InternetClient::cpp20_internet_client ALIAS cpp20_internet_client)
+add_library(cpp20_http_client STATIC source/cpp20_http_client.cpp)
+add_library(Cpp20HttpClient::cpp20_http_client ALIAS cpp20_http_client)
 
-set_target_properties(cpp20_internet_client PROPERTIES CXX_EXTENSIONS off)
+set_target_properties(cpp20_http_client PROPERTIES CXX_EXTENSIONS off)
 
 if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
 	add_compile_options(/utf-8)
 	# Concepts are (or were) only available in /std:c++latest, not in /std:c++20
-	target_compile_options(cpp20_internet_client PUBLIC /std:c++latest)
+	target_compile_options(cpp20_http_client PUBLIC /std:c++latest)
 else ()
-	target_compile_features(cpp20_internet_client PUBLIC cxx_std_20)
+	target_compile_features(cpp20_http_client PUBLIC cxx_std_20)
 endif ()
 
-target_include_directories(cpp20_internet_client PUBLIC 
+target_include_directories(cpp20_http_client PUBLIC 
 	# When using the library from the install tree, relative paths can be used.
 	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 	$<INSTALL_INTERFACE:include>
@@ -28,12 +28,12 @@ target_include_directories(cpp20_internet_client PUBLIC
 
 if (WIN32)
 	# Windows sockets 2 and Schannel.
-	target_link_libraries(cpp20_internet_client PRIVATE Ws2_32 crypt32)
+	target_link_libraries(cpp20_http_client PRIVATE Ws2_32 crypt32)
 else ()
 	# OpenSSL.
 	find_package(OpenSSL REQUIRED)
-	target_include_directories(cpp20_internet_client PRIVATE "${OPENSSL_INCLUDE_DIR}/../")
-	target_link_libraries(cpp20_internet_client PRIVATE OpenSSL::SSL OpenSSL::Crypto pthread)
+	target_include_directories(cpp20_http_client PRIVATE "${OPENSSL_INCLUDE_DIR}/../")
+	target_link_libraries(cpp20_http_client PRIVATE OpenSSL::SSL OpenSSL::Crypto pthread)
 endif ()
 
 #-----------------------------
@@ -68,7 +68,7 @@ set(TARGET_EXPORT_NAME ${PROJECT_NAME}Targets)
 # Specifies the target(s) that will be installed, and where to install 
 # the compiled library (relative to package installation path ${CMAKE_INSTALL_PREFIX}).
 install(
-	TARGETS cpp20_internet_client
+	TARGETS cpp20_http_client
 	EXPORT ${TARGET_EXPORT_NAME} 
 	ARCHIVE DESTINATION lib
 )

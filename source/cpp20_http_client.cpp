@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#include "cpp20_internet_client.hpp"
+#include "cpp20_http_client.hpp"
 
 //---------------------------------------------------------
 
@@ -80,7 +80,7 @@ using namespace std::chrono_literals;
 
 //---------------------------------------------------------
 
-namespace internet_client {
+namespace http_client {
 
 // Platform-specific utilities.
 namespace utils {
@@ -160,9 +160,9 @@ std::string get_error_message(DWORD const message_id) {
     auto buffer = static_cast<wchar_t*>(nullptr);
 
     [[maybe_unused]]
-    auto const buffer_cleanup = Cleanup{[&]{LocalFree(buffer);}};
+    auto const buffer_cleanup = Cleanup{[&]{::LocalFree(buffer);}};
 
-    auto const size = FormatMessageW(
+    auto const size = ::FormatMessageW(
         FORMAT_MESSAGE_FROM_SYSTEM | 
         FORMAT_MESSAGE_IGNORE_INSERTS | 
         FORMAT_MESSAGE_ALLOCATE_BUFFER,
@@ -185,15 +185,15 @@ std::string get_error_message(DWORD const message_id) {
 
 namespace unix {
 
-using UniqueBio = std::unique_ptr<BIO, decltype([](BIO* x){ BIO_free(x); })>;
+using UniqueBio = std::unique_ptr<BIO, decltype([](BIO* x){ ::BIO_free(x); })>;
 
 [[nodiscard]]
 std::string get_openssl_error_string() {
-	auto const memory_file_handle = UniqueBio{BIO_new(BIO_s_mem())};
-	ERR_print_errors(memory_file_handle.get());
+	auto const memory_file_handle = UniqueBio{::BIO_new(::BIO_s_mem())};
+	::ERR_print_errors(memory_file_handle.get());
 	
 	auto buffer = static_cast<char*>(nullptr);
-	auto const length = BIO_get_mem_data(memory_file_handle.get(), &buffer);
+	auto const length = ::BIO_get_mem_data(memory_file_handle.get(), &buffer);
 
 	return std::string(static_cast<char const*>(buffer), length);
 }
@@ -241,14 +241,14 @@ void throw_connection_error(std::string reason, int const error_code = errno, bo
 class WinSockLifetime {
 public:
 	WinSockLifetime() {
-		auto api_info = WSADATA{};
-		if (auto const result = WSAStartup(MAKEWORD(2, 2), &api_info)) {
+		auto api_info = ::WSADATA{};
+		if (auto const result = ::WSAStartup(MAKEWORD(2, 2), &api_info)) {
 			utils::throw_connection_error("Failed to initialize Winsock API 2.2", result);
 		}
 	}
 	~WinSockLifetime() {
 		if (!is_moved_) {
-			WSACleanup();
+			::WSACleanup();
 		}
 	}
 
@@ -998,8 +998,8 @@ class RawSocket {
 public:
 	void make_nonblocking() {
 		if (!is_nonblocking_) {
-			auto const flags = fcntl(handle_.get(), F_GETFL);
-			if (-1 == fcntl(handle_.get(), F_SETFL, flags | O_NONBLOCK)) {
+			auto const flags = ::fcntl(handle_.get(), F_GETFL);
+			if (-1 == ::fcntl(handle_.get(), F_SETFL, flags | O_NONBLOCK)) {
 				utils::throw_connection_error("Failed to turn on nonblocking mode on socket");
 			}
 			is_nonblocking_ = true;
@@ -1007,8 +1007,8 @@ public:
 	}
 	void make_blocking() {
 		if (is_nonblocking_) {
-			auto const flags = fcntl(handle_.get(), F_GETFL);
-			if (-1 == fcntl(handle_.get(), F_SETFL, flags & ~O_NONBLOCK)) {
+			auto const flags = ::fcntl(handle_.get(), F_GETFL);
+			if (-1 == ::fcntl(handle_.get(), F_SETFL, flags & ~O_NONBLOCK)) {
 				utils::throw_connection_error("Failed to turn off nonblocking mode on socket");
 			}
 			is_nonblocking_ = false;
@@ -1047,7 +1047,7 @@ public:
 			return std::size_t{};
 		}
 
-		if (auto const receive_result = recv(
+		if (auto const receive_result = ::recv(
 				handle_.get(), 
 				reinterpret_cast<char*>(buffer.data()), 
 				static_cast<int>(buffer.size()),
@@ -1146,7 +1146,7 @@ public:
 	void write(std::span<std::byte const> const data) {
 		ensure_connected_();
 		
-		if (SSL_write(
+		if (::SSL_write(
 				tls_connection_.get(),
 				data.data(),
 				static_cast<int>(data.size())
@@ -1164,7 +1164,7 @@ public:
 		}
 		
 		raw_socket_->make_blocking();
-		if (auto const read_result = SSL_read(
+		if (auto const read_result = ::SSL_read(
 				tls_connection_.get(),
 				buffer.data(),
 				static_cast<int>(buffer.size())
@@ -1187,7 +1187,7 @@ public:
 		}
 		
 		raw_socket_->make_nonblocking();
-		if (auto const read_result = SSL_read(
+		if (auto const read_result = ::SSL_read(
 				tls_connection_.get(),
 				buffer.data(),
 				static_cast<int>(buffer.size())
@@ -1195,7 +1195,7 @@ public:
 		{
 			return static_cast<std::size_t>(read_result);
 		}
-		else switch (auto const error_code = SSL_get_error(tls_connection_.get(), read_result)) {
+		else switch (auto const error_code = ::SSL_get_error(tls_connection_.get(), read_result)) {
 			case SSL_ERROR_WANT_READ:
 			case SSL_ERROR_WANT_WRITE:
 				// No available data to read at the moment.
@@ -1219,8 +1219,8 @@ public:
 	}
 
 private:
-	using TlsContext = std::unique_ptr<SSL_CTX, decltype([](auto x){SSL_CTX_free(x);})>;
-	using TlsConnection = std::unique_ptr<SSL, decltype([](auto x){SSL_free(x);})>;
+	using TlsContext = std::unique_ptr<SSL_CTX, decltype([](auto const x){ ::SSL_CTX_free(x); })>;
+	using TlsConnection = std::unique_ptr<SSL, decltype([](auto const x){ ::SSL_free(x); })>;
 
 	static void throw_tls_error_() {
 		throw errors::ConnectionFailed{utils::unix::get_openssl_error_string(), true};
@@ -1230,7 +1230,6 @@ private:
 		if (is_closed_) {
 			raw_socket_->reconnect_();
 			update_tls_socket_handle_();
-			// connect_();
 		}
 	}
 
@@ -1245,8 +1244,6 @@ private:
 	}
 	
 	void configure_tls_context_() {
-		// SSL_CTX_set_options(tls_context_.get(), SSL_OP_ALL);
-
 		if (1 != SSL_CTX_set_default_verify_paths(tls_context_.get())) {
 			throw_tls_error_();
 		}
@@ -1387,4 +1384,4 @@ Socket::~Socket() = default;
 Socket::Socket(Socket&&) noexcept = default;
 Socket& Socket::operator=(Socket&&) noexcept = default;
 
-} // namespace internet_client
+} // namespace http_client

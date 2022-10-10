@@ -1,6 +1,6 @@
-#include <cpp20_internet_client.hpp>
+#include <cpp20_http_client.hpp>
 
-using namespace internet_client;
+using namespace http_client;
 
 int main() {
     auto url = std::string{};
@@ -10,14 +10,14 @@ int main() {
     auto response_count = 0;
 
     while (true) {
-        auto const response = http::get(url).send();
+        auto const response = get(url).send();
 
         std::cout << "\nHeaders " << response_count++ << ": \n" << response.get_headers_string() << '\n';
         // TODO: replace with this when GCC supports std::format
         // utils::println("\nHeaders {}: \n{}", response_count++, response.get_headers_string());
 
-        if (response.get_status_code() == http::StatusCode::MovedPermanently ||
-            response.get_status_code() == http::StatusCode::Found) 
+        if (response.get_status_code() == StatusCode::MovedPermanently ||
+            response.get_status_code() == StatusCode::Found) 
         {
             if (auto const new_url = response.get_header_value("location")) {
                 url = *new_url;

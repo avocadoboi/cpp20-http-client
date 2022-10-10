@@ -1,4 +1,4 @@
-#include <cpp20_internet_client.hpp>
+#include <cpp20_http_client.hpp>
 
 /*
 	This example is only meant to compile and demonstrate the socket abstraction.
@@ -7,14 +7,14 @@
 
 int main() {
 	// If the last parameter is true, the data is sent and received over TLS.
-	auto socket = internet_client::open_socket("wss://something", internet_client::Port{443}, true);
+	auto socket = http_client::open_socket("wss://something", http_client::Port{443}, true);
 
 	// Could also use read_available to only read what is currently 
 	// received and ready, and do other stuff while waiting for response data.
 	// std::async could be used as well, together with the read function 
 	// that takes no parameters and returns a data vector.
 	// The result cannot be ignored as it contains the size of data that was actually 
-	// read OR internet_client::ConnectionClosed if the peer closed the connection.
+	// read OR http_client::ConnectionClosed if the peer closed the connection.
 	auto buffer = std::array<std::byte, 512>{};
 	if (auto const result = socket.read(buffer); std::holds_alternative<std::size_t>(result)) 
 	{

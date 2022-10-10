@@ -1,6 +1,6 @@
-#include <cpp20_internet_client.hpp>
+#include <cpp20_http_client.hpp>
 
-using namespace internet_client;
+using namespace http_client;
 using namespace std::string_view_literals;
 
 std::string read_url() {
@@ -14,21 +14,21 @@ std::string read_url() {
 	return url;	
 }
 
-http::Response send_request(std::string_view const url) {
-	return http::get(url)
-		.add_header({.name="One", .value="aaa"}) // http::Header struct.
+Response send_request(std::string_view const url) {
+	return get(url)
+		.add_header({.name="One", .value="aaa"}) // Header struct.
 		.add_headers("Two: bbb") // Can be multiple lines for more than one header.
 		.add_headers( // Variadic template
-			http::Header{.name="Three", .value="ccc"},
-			http::Header{.name="Four", .value="ddd"},
-			http::Header{.name="Five", .value="eee"}
+			Header{.name="Three", .value="ccc"},
+			Header{.name="Four", .value="ddd"},
+			Header{.name="Five", .value="eee"}
 		).add_headers({ // Initializer list
 			{.name="Six", .value="fff"},
 			{.name="Four", .value="ggg"},
 		}).send();
 }
 
-void use_response(http::Response const& response) {
+void use_response(Response const& response) {
 	auto const response_headers = response.get_headers_string();
 	std::cout << "Response headers below.\n\n" << response_headers << "\n\n";
 
@@ -61,15 +61,15 @@ void use_response(http::Response const& response) {
 	utils::write_to_file(response.get_body(), std::string{filename});
 }
 
-http::Response do_request() {
+Response do_request() {
 	auto url = read_url();
 
 	while (true) {
 		auto response = send_request(url);
 
 		// Handle possible TLS redirect
-		if (response.get_status_code() == http::StatusCode::MovedPermanently||
-            response.get_status_code() == http::StatusCode::Found) 
+		if (response.get_status_code() == StatusCode::MovedPermanently||
+            response.get_status_code() == StatusCode::Found) 
 		{
 			if (auto const new_url = response.get_header_value("location")) {
 				std::cout << "Got status code moved permanently or found, redirecting to " << *new_url << "...\n\n";
