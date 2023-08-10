@@ -8,7 +8,6 @@ As of now, only GCC and MSVC support all of the C++20 features used in this libr
 * User friendly, functional design.
 * An API that is hard to misuse.
 * Library code follows C++ core guidelines.
-* A single module file when build systems and compilers have good support for modules. Until then, one source and one header file.
 * Safe and easy to use TCP Socket abstraction with support for TLS encryption.
 * HTTP requests, both unsecured and over TLS.
 * Asynchronous requests.
