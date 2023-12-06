@@ -507,12 +507,14 @@ inline HostAndPort split_domain_name(std::string_view const domain_name)
 		else
 		{
 			return HostAndPort{
-				.host{domain_name.substr(0, colon_position)}
+				.host{domain_name.substr(0, colon_position)},
+				.port = std::nullopt
 			};
 		}
 	}
 	return HostAndPort{
-		.host{domain_name}
+		.host{domain_name},
+		.port = std::nullopt
 	};
 }
 
