@@ -10,9 +10,6 @@ add_compile_options(
 	-Wcast-qual 
 	-Wcast-align
 	-Wconversion
-
-	-Wno-parentheses
-	-Wno-missing-field-initializers
 )
 
 add_compile_options(

@@ -1084,9 +1084,14 @@ private:
 	static AddressInfo get_address_info_(std::string const server, Port const port) {
 		auto const port_string = std::to_string(port);
 		auto const hints = addrinfo{
-			.ai_family = AF_UNSPEC,
-			.ai_socktype = SOCK_STREAM,
-			.ai_protocol = IPPROTO_TCP,
+			.ai_flags{},
+			.ai_family{AF_UNSPEC},
+			.ai_socktype{SOCK_STREAM},
+			.ai_protocol{IPPROTO_TCP},
+			.ai_addrlen{},
+			.ai_addr{},
+			.ai_canonname{},
+			.ai_next{}
 		};
 		auto address_info = static_cast<addrinfo*>(nullptr);
 

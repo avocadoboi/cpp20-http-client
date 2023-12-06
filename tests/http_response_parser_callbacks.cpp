@@ -99,7 +99,9 @@ void test_callbacks_full_input(
 			},
 			.handle_body_progress = [&](ResponseProgressBody& progress) {
 				CHECK(std::ranges::equal(progress.body_data_so_far, expected_body_data.first(progress.body_data_so_far.size())));
-			}
+			},
+			.handle_finish{},
+			.handle_stop{}
 		};
 		auto const result = parse_input_in_chunks(algorithms::ResponseParser{response_callbacks}, input_string, chunk_size);
 		CHECK(result == expected_result);
@@ -150,7 +152,9 @@ void test_callbacks_stopping_after_head(
 			},
 			.handle_body_progress = [&](ResponseProgressBody&) {
 				got_any_body = true;
-			}
+			},
+			.handle_finish{},
+			.handle_stop{}
 		};
 		CHECK(
 			parse_input_in_chunks(algorithms::ResponseParser{response_callbacks}, input_string, chunk_size) ==
