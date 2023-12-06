@@ -611,9 +611,9 @@ constexpr std::string_view extract_filename(std::string_view const url)
 constexpr bool get_is_allowed_uri_character(char const character) noexcept {
 	constexpr auto other_characters = std::string_view{"%-._~:/?#[]@!$&'()*+,;="};
 	
-	return character >= '0' && character <= '9' || 
-		character >= 'a' && character <= 'z' ||
-		character >= 'A' && character <= 'Z' ||
+	return (character >= '0' && character <= '9') || 
+		(character >= 'a' && character <= 'z') ||
+		(character >= 'A' && character <= 'Z') ||
 		other_characters.find(character) != std::string_view::npos;
 }
 
