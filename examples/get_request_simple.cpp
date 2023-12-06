@@ -16,8 +16,8 @@ int main() {
         // TODO: replace with this when GCC supports std::format
         // utils::println("\nHeaders {}: \n{}", response_count++, response.get_headers_string());
 
-        if (response.get_status_code() == StatusCode::MovedPermanently ||
-            response.get_status_code() == StatusCode::Found) 
+        if (response.get_status_code() == http_client::StatusCode::MovedPermanently ||
+            response.get_status_code() == http_client::StatusCode::Found) 
         {
             if (auto const new_url = response.get_header_value("location")) {
                 url = *new_url;
