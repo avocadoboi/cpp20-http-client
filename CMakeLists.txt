@@ -5,9 +5,9 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib/)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin/)
 
 # Project specific options
-option(CCPP20_HTTP_CLIENT_BUILD_EXAMPLES "Set to OFF to not build examples" ON)
-option(CCPP20_HTTP_CLIENT_BUILD_TESTS "Set to OFF to not build tests" ON)
-option(CCPP20_HTTP_CLIENT_ENABLE_INSTALL "Generate the install target" ON)
+option(CPP20_HTTP_CLIENT_BUILD_EXAMPLES "Set to OFF to not build examples" ON)
+option(CPP20_HTTP_CLIENT_BUILD_TESTS "Set to OFF to not build tests" ON)
+option(CPP20_HTTP_CLIENT_ENABLE_INSTALL "Generate the install target" ON)
 
 #-----------------------------
 # Library target.
@@ -45,12 +45,12 @@ endif ()
 
 if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
 	include(CTest)
-	if (BUILD_TESTING AND CCPP20_HTTP_CLIENT_BUILD_TESTS)
+	if (BUILD_TESTING AND CPP20_HTTP_CLIENT_BUILD_TESTS)
 		add_subdirectory(tests)
 	endif ()
 endif ()
 
-if (CCPP20_HTTP_CLIENT_BUILD_EXAMPLES)
+if (CPP20_HTTP_CLIENT_BUILD_EXAMPLES)
 	add_subdirectory(examples)
 endif ()
 
@@ -59,7 +59,7 @@ endif ()
 
 include(CMakePackageConfigHelpers)
 
-if (CCPP20_HTTP_CLIENT_ENABLE_INSTALL)
+if (CPP20_HTTP_CLIENT_ENABLE_INSTALL)
 	# Create a file that contains information about package versioning.
 	# It will be placed in CMAKE_CURRENT_BINARY_DIR.
 	write_basic_package_version_file(
