@@ -1,0 +1,94 @@
+name: Build and Test
+
+on:
+  push:
+    branches:
+      - "master"
+  pull_request:
+    branches:
+      - "*"
+jobs:
+  build_and_test:
+    name: "${{ matrix.name }}"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - name: "Ubuntu Jammy clang-14 build"
+            os: ubuntu-22.04
+            cpp_compiler: clang++
+
+          - name: "Ubuntu Jammy gcc-12 build"
+            os: ubuntu-22.04
+            cpp_compiler: g++-12
+
+          - name: "Mac OS clang-14 build"
+            os: macos-12
+            cpp_compiler: clang++
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt update
+          sudo apt install -y --no-install-recommends ninja-build catch2 clang-tidy-14 libcurl4-openssl-dev
+          sudo ln -s /usr/bin/clang-tidy-14 /usr/local/bin/clang-tidy
+      - name: Install (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install ninja catch2
+          sudo ln -s /usr/local/opt/llvm/bin/clang-tidy /usr/local/bin/clang-tidy
+      - name: Set environment variables
+        run: |
+          echo CXX="${{ matrix.cpp_compiler }}" >> $GITHUB_ENV
+        # '>' converts newlines into spaces
+      - name: Configure
+        run: >
+          cmake
+          -B build
+          -G Ninja
+          -DCMAKE_TOOLCHAIN_FILE=cmake/GccClang.cmake
+          -DCMAKE_BUILD_TYPE=Release
+      - name: Build all targets
+        run: cmake --build build --config Release
+      - name: Run Tests
+        run: cmake --build build --target run_tests
+# For the future we can also generate Doxygen and use clang-format:
+#  doxygen:
+#    name: "Generate Doxygen"
+#    runs-on: ubuntu-22.04
+#    steps:
+#      - uses: actions/checkout@v3
+#      - name: Install
+#        run: |
+#          sudo apt update
+#          sudo apt install -y --no-install-recommends libcurl4-openssl-dev
+#      - name: Install latest Doxygen (v1.9.78)
+#        run: |
+#          wget https://www.doxygen.nl/files/doxygen-1.9.8.linux.bin.tar.gz
+#          tar -xf doxygen-1.9.8.linux.bin.tar.gz
+#          cd doxygen-1.9.8
+#          sudo make install
+#      - name: Configure
+#        run: >
+#          cmake
+#          -B build
+#          -DDOC=ON
+#      - name: Build Doxygen
+#        working-directory: ./build
+#        run: make doc
+#
+#  static_analytics:
+#    name: "Static code analysis"
+#    runs-on: ubuntu-22.04
+#    steps:
+#      - uses: actions/checkout@v3
+#      - name: Install
+#        run: |
+#          sudo apt update
+#          sudo apt install -y --no-install-recommends clang-tidy-14 libcurl4-openssl-dev
+#          sudo ln -s /usr/bin/clang-tidy-14 /usr/local/bin/clang-tidy
+#      - name: Analysis
+#        run: |
+#          CCC_CXX=clang++-10 scan-build-14 --status-bugs cmake -DBUILD_SHARED_LIBS=ON "${SOURCE_DIR}"
+#          CCC_CXX=clang++-10 scan-build-14 --status-bugs make VERBOSE=1
