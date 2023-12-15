@@ -9,3 +9,10 @@ find_package(Catch2 CONFIG REQUIRED)
 target_link_libraries(cpp20_http_client_test PRIVATE Catch2::Catch2 Catch2::Catch2WithMain)
 
 add_test(NAME unit_tests COMMAND cpp20_http_client_test)
+
+add_custom_target(run_tests
+    COMMAND ${CMAKE_BINARY_DIR}/bin/cpp20_http_client_test --use-colour yes
+    DEPENDS cpp20_http_client_test
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMENT "Running tests..."
+)
