@@ -23,7 +23,7 @@ int main() {
         })
         .send_async<1024>();
 
-    // Do stuff that takes time here, while waiting for reponse...
+    // Do stuff that takes time here, while waiting for response...
     while (response.wait_for(20ms) != std::future_status::ready) {
         std::cout << "(Waiting for response...)\n";
     }
