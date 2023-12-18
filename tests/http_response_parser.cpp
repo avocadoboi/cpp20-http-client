@@ -4,7 +4,7 @@ void test_response_parser(std::string_view const input, algorithms::ParsedRespon
 {
 	auto const response_data = utils::string_to_data<std::byte>(input);
 
-	for (std::size_t const packet_size : {1, 8, 32, 128, 512, 2048})
+	for (std::size_t const packet_size : {static_cast<std::size_t>(1), static_cast<std::size_t>(8), static_cast<std::size_t>(32), static_cast<std::size_t>(128), static_cast<std::size_t>(512), static_cast<std::size_t>(2048)})
 	{
 		auto parser = algorithms::ResponseParser{};
 

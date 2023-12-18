@@ -14,30 +14,47 @@ jobs:
     strategy:
       matrix:
         include:
-          - name: "Ubuntu Jammy clang-14 build"
+          - name: "Ubuntu Jammy clang-17 build"
             os: ubuntu-22.04
             cpp_compiler: clang++
+            use_install_action: true
 
-          - name: "Ubuntu Jammy gcc-12 build"
+          - name: "Ubuntu Jammy gcc-13 build"
             os: ubuntu-22.04
-            cpp_compiler: g++-12
+            cpp_compiler: g++-13
 
-          - name: "Mac OS clang-14 build"
-            os: macos-12
-            cpp_compiler: clang++
+          #- name: "Mac OS clang-15 build"
+          #  os: macos-13
+          #  cpp_compiler: clang++
     steps:
       - uses: actions/checkout@v3
+
+      - name: Cache LLVM and Clang
+        if: runner.os == 'Linux' && matrix.use_install_action
+        id: cache-llvm
+        uses: actions/cache@v3
+        with:
+          path: |
+            C:/Program Files/LLVM
+            ./llvm
+          key: llvm-17
+
+      - name: Install LLVM and Clang
+        if: runner.os == 'Linux' && matrix.use_install_action
+        uses: KyleMayes/install-llvm-action@v1
+        with:
+          version: "17"
+          cached: ${{ steps.cache-llvm.outputs.cache-hit }}
+
       - name: Install (Ubuntu)
         if: runner.os == 'Linux'
         run: |
           sudo apt update
-          sudo apt install -y --no-install-recommends ninja-build catch2 clang-tidy-14 libcurl4-openssl-dev
-          sudo ln -s /usr/bin/clang-tidy-14 /usr/local/bin/clang-tidy
+          sudo apt install -y --no-install-recommends ninja-build catch2
       - name: Install (macOS)
         if: runner.os == 'macOS'
         run: |
           brew install ninja catch2
-          sudo ln -s /usr/local/opt/llvm/bin/clang-tidy /usr/local/bin/clang-tidy
       - name: Set environment variables
         run: |
           echo CXX="${{ matrix.cpp_compiler }}" >> $GITHUB_ENV

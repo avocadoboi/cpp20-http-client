@@ -344,7 +344,7 @@ void append_to_vector(std::vector<T>& vector, std::span<T const> const data) {
 //---------------------------------------------------------
 
 template<typename T>
-concept IsByteData = IsByte<T> || std::ranges::range<T> && IsByte<std::ranges::range_value_t<T>>;
+concept IsByteData = IsByte<T> || (std::ranges::range<T> && IsByte<std::ranges::range_value_t<T>>);
 
 /*
 	Returns the size of any trivial byte-sized element or range of trivial byte-sized elements.
@@ -353,7 +353,7 @@ template<IsByteData T>
 [[nodiscard]]
 std::size_t size_of_byte_data(T const& data) {
 	if constexpr (std::ranges::range<T>) {
-		return std::ranges::distance(data);
+		return static_cast<std::size_t>(std::ranges::distance(data));
 	}
 	else {
 		return sizeof(data);
@@ -417,7 +417,7 @@ template<std::ranges::contiguous_range DataRange_> requires IsByte<std::ranges::
 void write_to_file(DataRange_ const& data, std::string const& file_name) {
 	// std::string because std::ofstream does not take std::string_view.
 	auto file_stream = std::ofstream{file_name, std::ios::binary};
-	file_stream.write(reinterpret_cast<char const*>(std::ranges::data(data)), std::ranges::size(data));
+	file_stream.write(reinterpret_cast<char const*>(std::ranges::data(data)), static_cast<std::streamsize>(std::ranges::size(data)));
 }
 
 //---------------------------------------------------------
@@ -1574,8 +1574,8 @@ private:
 
 	void parse_new_regular_body_data_(std::size_t const new_data_start) {
 		if (buffer_.size() >= body_start_ + body_size_) {
-			auto const body_begin = buffer_.begin() + body_start_;
-			result_.body_data = utils::DataVector(body_begin, body_begin + body_size_);
+			auto const body_begin = buffer_.begin() + static_cast<std::ptrdiff_t>(body_start_);
+			result_.body_data = utils::DataVector(body_begin, body_begin + static_cast<std::ptrdiff_t>(body_size_));
 
 			if (callbacks_ && (*callbacks_)->handle_body_progress) {
 				auto body_progress = ResponseProgressBody{

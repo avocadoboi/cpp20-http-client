@@ -7,10 +7,10 @@ void test_chunky_body_parser(std::string_view const chunky_body, std::string_vie
     {
         auto parser = algorithms::ChunkyBodyParser{};
 
-        for (auto pos = std::size_t{};; pos += packet_size)
+        for (auto pos = std::size_t{};; pos += static_cast<std::size_t>(packet_size))
         {
-            auto const new_data_end = chunky_body_data.begin() + std::min(pos + packet_size, chunky_body_data.size());
-            if (auto const result = parser.parse_new_data(std::span{chunky_body_data.begin() + pos, new_data_end})) {
+            auto const new_data_end = chunky_body_data.begin() + static_cast<std::ptrdiff_t>(std::min(pos + static_cast<std::size_t>(packet_size), chunky_body_data.size()));
+            if (auto const result = parser.parse_new_data(std::span{chunky_body_data.begin() + static_cast<std::ptrdiff_t>(pos), new_data_end})) {
                 CHECK(utils::data_to_string(std::span{*result}) == expected_result);
                 break;
             }
