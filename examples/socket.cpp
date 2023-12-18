@@ -1,3 +1,5 @@
+#include <iostream>
+
 #include <cpp20_http_client.hpp>
 
 /*
@@ -20,6 +22,10 @@ int main() {
 	{
 		// This is the data that we got from this call.
 		auto const received_data = std::span{buffer}.first(std::get<std::size_t>(result));
+		// Print buffer to console assuming the bytes are characters (as an example)
+		for(const auto &data : received_data) {
+			std::cout << static_cast<char>(data) << std::endl;
+		}
 	}
 	else {
 		// Peer closed the connection!
