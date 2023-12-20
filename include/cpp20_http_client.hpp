@@ -1267,10 +1267,11 @@ public:
 	}
 
 	/*
-		Return the total time as an std::chrono::duration<double> object
+		Return the total time as an std::chrono::duration<double, std::milli> object thus in µs (microseconds).
+		If you wish to convert it to another unit, use: std::chrono::duration_cast<>().
 	*/
 	[[nodiscard]]
-	std::chrono::duration<double> get_total_time() const {
+	std::chrono::duration<double, std::milli> get_total_time() const {
 		return total_time_;
 	}
 
@@ -1284,7 +1285,7 @@ public:
 	Response(Response&&) noexcept = default;
 	Response& operator=(Response&&) noexcept = default;
 
-	Response(algorithms::ParsedResponse&& parsed_response, std::string&& url, const std::chrono::duration<double>&& total_time) :
+	Response(algorithms::ParsedResponse&& parsed_response, std::string&& url, const std::chrono::duration<double, std::milli>&& total_time) :
 		parsed_response_{std::move(parsed_response)},
 		url_{std::move(url)},
 		total_time_{total_time}
@@ -1293,7 +1294,7 @@ public:
 private:
 	algorithms::ParsedResponse parsed_response_;
 	std::string url_;
-	std::chrono::duration<double> total_time_;
+	std::chrono::duration<double, std::milli> total_time_;
 };
 
 namespace algorithms {
@@ -1647,7 +1648,7 @@ inline Response receive_response(Socket const&& socket, std::string&& url, Respo
 				// Calculate the total total duration
 				// Total time = End time - Start time
 				const auto end_time_point = std::chrono::steady_clock::now();
-				const std::chrono::duration<double> total_time_duration = end_time_point - start_time_point;
+				const std::chrono::duration<double, std::milli> total_time_duration = end_time_point - start_time_point;
 				// Create Response object
 				auto response = Response{std::move(*parse_result), std::move(url), std::move(total_time_duration)};
 				if (callbacks.handle_finish) {
