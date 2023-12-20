@@ -1288,7 +1288,7 @@ public:
 	Response(algorithms::ParsedResponse&& parsed_response, std::string&& url, const std::chrono::duration<double, std::milli>&& total_time) :
 		parsed_response_{std::move(parsed_response)},
 		url_{std::move(url)},
-		total_time_{total_time}
+		total_time_{std::move(total_time)}
 	{}
 
 private:
