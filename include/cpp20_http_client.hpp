@@ -1,7 +1,7 @@
 /*
 MIT License
 
-Copyright (c) 2023 Björn Sundin
+Copyright (c) 2021-2023 Björn Sundin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -1324,7 +1324,7 @@ private:
 
 	/*
 		"part" refers to a separately parsed unit of data.
-		This paritioning makes the parsing algorithm simpler.
+		This partitioning makes the parsing algorithm simpler.
 		Returns the position where the part ended.
 		It may be past the end of the part.
 	*/

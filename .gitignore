@@ -6,6 +6,7 @@
 !sources
 !*.cmake
 !*.cmake.in
+!*.yaml
 !*/
 
 build

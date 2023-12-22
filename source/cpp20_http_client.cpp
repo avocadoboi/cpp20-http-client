@@ -1,7 +1,7 @@
 /*
 MIT License
 
-Copyright (c) 2023 Björn Sundin
+Copyright (c) 2021-2023 Björn Sundin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -755,7 +755,7 @@ private:
 	}
 
 	[[nodiscard]]
-	static CredentialsHandle aquire_credentials_handle_() {
+	static CredentialsHandle acquire_credentials_handle_() {
 		auto credentials_data = SCHANNEL_CRED{
 			.dwVersion = SCHANNEL_CRED_VERSION,
 		};
@@ -774,13 +774,13 @@ private:
 			&credentials_time_limit
 		); 
 		if (security_status != SEC_E_OK) {
-			utils::throw_connection_error("Failed to aquire credentials", security_status, true);
+			utils::throw_connection_error("Failed to acquire credentials", security_status, true);
 		}
 		
 		return CredentialsHandle{credentials_handle};
 	}
 
-	CredentialsHandle credentials_{aquire_credentials_handle_()};
+	CredentialsHandle credentials_{acquire_credentials_handle_()};
 	RawSocket* socket_;
 	std::wstring server_name_;
 
