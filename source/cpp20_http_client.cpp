@@ -1,7 +1,7 @@
 /*
 MIT License
 
-Copyright (c) 2021 Björn Sundin
+Copyright (c) 2023 Björn Sundin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -212,11 +212,10 @@ void throw_connection_error(
 	int const error_code = static_cast<int>(GetLastError()),
 	bool const is_tls_error = false
 ) {
-	reason += " with code ";
-	reason += std::to_string(error_code);
-	reason += ": ";
-	reason += win::get_error_message(error_code);
-	throw errors::ConnectionFailed{reason, is_tls_error};
+	throw errors::ConnectionFailed{
+		std::format("{} with code {}: {}", reason, error_code, win::get_error_message(error_code)), 
+		is_tls_error
+	};
 }
 
 #endif // _WIN32
@@ -225,11 +224,10 @@ void throw_connection_error(
 
 [[noreturn]]
 void throw_connection_error(std::string reason, int const error_code = errno, bool const is_tls_error = false) {
-	reason += " with code ";
-	reason += std::to_string(error_code);
-	reason += ": ";
-	reason += std::generic_category().message(error_code);
-	throw errors::ConnectionFailed{reason, is_tls_error};
+	throw errors::ConnectionFailed{
+		std::format("{} with code {}: {}", reason, error_code, std::generic_category().message(error_code)), 
+		is_tls_error
+	};
 }
 
 #endif // IS_POSIX
@@ -374,7 +372,7 @@ private:
 			)) 
 		{
 			throw errors::ConnectionFailed{
-				std::string("Failed to get address info for socket creation: ") + utils::win::get_error_message(result)//gai_strerror(result)
+				std::format("Failed to get address info for socket creation: {}", utils::win::get_error_message(result))
 			};
 		}
 
@@ -1103,7 +1101,7 @@ private:
 			))
 		{
 			throw errors::ConnectionFailed{
-				std::string("Failed to get address info for socket creation: ") + gai_strerror(result)
+				std::format("Failed to get address info for socket creation: {}", gai_strerror(result))
 			};
 		}
 

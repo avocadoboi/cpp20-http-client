@@ -1,7 +1,7 @@
 /*
 MIT License
 
-Copyright (c) 2021 Björn Sundin
+Copyright (c) 2023 Björn Sundin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -29,6 +29,7 @@ SOFTWARE.
 #include <charconv>
 #include <chrono>
 #include <concepts>
+#include <format>
 #include <fstream>
 #include <functional>
 #include <future>
@@ -231,11 +232,8 @@ private:
 #ifdef __cpp_lib_source_location
 [[noreturn]]
 inline void unreachable(std::source_location const& source_location = std::source_location::current()) {
-	// TODO: use std::format when supported
-	// std::cerr << std::format("Reached an unreachable code path in file {}, in function {}, on line {}.\n", 
-	// 	source_location.file_name(), source_location.function_name(), source_location.line());
-	std::cerr << "Reached an unreachable code path in file " << source_location.file_name() << 
-		", in function " << source_location.function_name() << ", on line " << source_location.line() << ".\n";
+	std::cerr << std::format("Reached an unreachable code path in file {}, in function {}, on line {}.\n", 
+		source_location.file_name(), source_location.function_name(), source_location.line());
 	std::exit(1);
 }
 #else
@@ -1723,7 +1721,7 @@ public:
 		headers_string.reserve(headers.size()*128);
 		
 		for (auto const& header : headers) {
-			(((headers_string += header.name) += ": ") += header.value) += "\r\n";
+			headers_string += std::format("{}: {}\r\n", header.name, header.value);
 		}
 		
 		return std::move(*this).add_headers(headers_string);
@@ -1751,7 +1749,7 @@ public:
 	*/
 	[[nodiscard]]
 	Request&& add_header(Header const& header) && {
-		return std::move(*this).add_headers(((std::string{header.name} += ": ") += header.value));
+		return std::move(*this).add_headers(std::format("{}: {}", header.name, header.value));
 	}
 
 	/*
@@ -1832,7 +1830,7 @@ public:
 
 		The buffer_size template parameter specifies the size of the buffer that data
 		from the server is read into at a time. If it is small, then data will be received
-		in many times in smaller pieces, with some time cost. If it is big, then 
+		many times in smaller pieces, with some time cost. If it is big, then 
 		data will be read few times but in large pieces, with more memory cost.
 	*/
 	template<std::size_t buffer_size>
@@ -1857,9 +1855,7 @@ private:
 		using namespace std::string_view_literals;
 
 		if (!body_.empty()) {
-			// TODO: Use std::format when available
-			// headers_ += std::format("Transfer-Encoding: identity\r\nContent-Length: {}\r\n", body_.size());
-			((headers_ += "Transfer-Encoding: identity\r\nContent-Length: ") += std::to_string(body_.size())) += "\r\n";
+			headers_ += std::format("Transfer-Encoding: identity\r\nContent-Length: {}\r\n", body_.size());
 		}
 		
 		auto const request_data = utils::concatenate_byte_data(

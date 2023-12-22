@@ -1,6 +1,5 @@
 #include <cpp20_http_client.hpp>
 
-using namespace http_client;
 using namespace std::string_view_literals;
 
 std::string read_url() {
@@ -14,21 +13,21 @@ std::string read_url() {
 	return url;	
 }
 
-Response send_request(std::string_view const url) {
-	return get(url)
+http_client::Response send_request(std::string_view const url) {
+	return http_client::get(url)
 		.add_header({.name="One", .value="aaa"}) // Header struct.
 		.add_headers("Two: bbb") // Can be multiple lines for more than one header.
 		.add_headers( // Variadic template
-			Header{.name="Three", .value="ccc"},
-			Header{.name="Four", .value="ddd"},
-			Header{.name="Five", .value="eee"}
+			http_client::Header{.name="Three", .value="ccc"},
+			http_client::Header{.name="Four", .value="ddd"},
+			http_client::Header{.name="Five", .value="eee"}
 		).add_headers({ // Initializer list
 			{.name="Six", .value="fff"},
 			{.name="Four", .value="ggg"},
 		}).send();
 }
 
-void use_response(Response const& response) {
+void use_response(http_client::Response const& response) {
 	auto const response_headers = response.get_headers_string();
 	std::cout << "Response headers below.\n\n" << response_headers << "\n\n";
 
@@ -49,8 +48,8 @@ void use_response(Response const& response) {
 	auto const url = response.get_url();
 
 	auto const filename = [&]{
-		if (auto const filename = utils::extract_filename(url); filename.empty()) {
-			return utils::split_url(url).host;
+		if (auto const filename = http_client::utils::extract_filename(url); filename.empty()) {
+			return http_client::utils::split_url(url).host;
 		}
 		else {
 			return filename;
@@ -58,18 +57,18 @@ void use_response(Response const& response) {
 	}();
 
 	std::cout << "Writing body to file with name: " << filename << '\n';
-	utils::write_to_file(response.get_body(), std::string{filename});
+	http_client::utils::write_to_file(response.get_body(), std::string{filename});
 }
 
-Response do_request() {
+http_client::Response do_request() {
 	auto url = read_url();
 
 	while (true) {
 		auto response = send_request(url);
 
 		// Handle possible TLS redirect
-		if (response.get_status_code() == StatusCode::MovedPermanently||
-            response.get_status_code() == StatusCode::Found) 
+		if (response.get_status_code() == http_client::StatusCode::MovedPermanently||
+            response.get_status_code() == http_client::StatusCode::Found) 
 		{
 			if (auto const new_url = response.get_header_value("location")) {
 				std::cout << "Got status code moved permanently or found, redirecting to " << *new_url << "...\n\n";
@@ -86,7 +85,7 @@ int main() {
 		auto const response = do_request();
 		use_response(response);
 	}
-	catch (errors::ConnectionFailed const& error) {
+	catch (http_client::errors::ConnectionFailed const& error) {
 		std::cout << "The connection failed with error \"" << error.what() << '"';
 	}
 

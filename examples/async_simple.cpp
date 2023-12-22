@@ -1,21 +1,19 @@
 #include <cpp20_http_client.hpp>
 
-using namespace http_client;
-
-void handle_progress(ResponseProgressRaw const& progress) {
+void handle_progress(http_client::ResponseProgressRaw const& progress) {
 	std::cout << "Received " << progress.data.size() << " bytes.\n";
 }
 
 int main() {
 	auto response_future = 
-		make_request(RequestMethod::Delete, "https://httpbin.org/delete")
+		http_client::make_request(http_client::RequestMethod::Delete, "https://httpbin.org/delete")
 		.add_headers("accept: application/json")
 		.set_raw_progress_callback(handle_progress)
 		.send_async<256>();
 
 	std::cout << "Waiting...\n";
 
-	Response const result = response_future.get();
+	http_client::Response const result = response_future.get();
 	std::cout << "Got response!\n";
 
 	std::cout << "The content type is: " << 
