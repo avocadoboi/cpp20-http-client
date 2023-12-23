@@ -1,5 +1,7 @@
 ﻿#include "testing_header.hpp"
 
+#include <cmath>
+
 [[nodiscard]]
 auto parse_input_in_chunks(algorithms::ResponseParser&& parser, std::string_view const input_string, std::size_t const chunk_size) 
 	-> algorithms::ParsedResponse
@@ -76,11 +78,11 @@ void test_callbacks_full_input(
 	};
 
 	for (auto const chunk_size : chunk_sizes_to_test) {
-		auto number_of_parsed_packets = 0;
+		auto number_of_parsed_packets = std::size_t{};
 
 		auto response_callbacks = algorithms::ResponseCallbacks{
 			.handle_raw_progress = [&](ResponseProgressRaw& progress) {
-				CHECK(progress.new_data_start == number_of_parsed_packets*chunk_size);
+				CHECK(progress.new_data_start == (number_of_parsed_packets * chunk_size));
 
 				auto const input_data = utils::string_to_data<std::byte const>(std::string_view{input_string});
 				if (progress.new_data_start + chunk_size > input_data.size()) {
@@ -105,7 +107,7 @@ void test_callbacks_full_input(
 		};
 		auto const result = parse_input_in_chunks(algorithms::ResponseParser{response_callbacks}, input_string, chunk_size);
 		CHECK(result == expected_result);
-		CHECK(number_of_parsed_packets <= std::ceil(static_cast<double>(input_string.size()) / static_cast<double>(chunk_size)));
+		CHECK(number_of_parsed_packets <= static_cast<std::size_t>(std::ceil(static_cast<double>(input_string.size()) / static_cast<double>(chunk_size))));
 	}
 }
 
@@ -130,11 +132,11 @@ void test_callbacks_stopping_after_head(
 	};
     
     for (auto const chunk_size : chunk_sizes_to_test) {
-		auto number_of_parsed_packets = 0;
+		auto number_of_parsed_packets = std::size_t{};
 		auto got_any_body = false;
         auto response_callbacks = algorithms::ResponseCallbacks{
             .handle_raw_progress = [&](ResponseProgressRaw& progress) {
-				CHECK(progress.new_data_start == number_of_parsed_packets*chunk_size);
+				CHECK(progress.new_data_start == (number_of_parsed_packets * chunk_size));
 
 				auto const input_data = utils::string_to_data<std::byte const>(std::string_view{input_string});
 				if (chunk_size > input_data.size() || progress.new_data_start > input_data.size() - chunk_size) {
@@ -161,8 +163,8 @@ void test_callbacks_stopping_after_head(
 			expected_result
 		);
 		CHECK(!got_any_body);
-		CHECK(number_of_parsed_packets == std::ceil(static_cast<double>(headers_string.size() + header_body_separator.size()) / 
-			static_cast<double>(chunk_size)));
+		CHECK(number_of_parsed_packets == static_cast<std::size_t>(std::ceil(static_cast<double>(headers_string.size() + header_body_separator.size()) / 
+			static_cast<double>(chunk_size))));
     }
 }
 

@@ -195,7 +195,7 @@ std::string get_openssl_error_string() {
 	auto buffer = static_cast<char*>(nullptr);
 	auto const length = ::BIO_get_mem_data(memory_file_handle.get(), &buffer);
 
-	return std::string(static_cast<char const*>(buffer), length);
+	return std::string(static_cast<char const*>(buffer), static_cast<std::string::size_type>(length));
 }
 
 } // namespace unix
@@ -1030,7 +1030,7 @@ public:
 		if (::send(
 				handle_.get(),
 				data.data(),
-				static_cast<int>(data.size()),
+				static_cast<size_t>(data.size()),
 				0
 			) == -1) 
 		{
@@ -1048,7 +1048,7 @@ public:
 		if (auto const receive_result = ::recv(
 				handle_.get(), 
 				reinterpret_cast<char*>(buffer.data()), 
-				static_cast<int>(buffer.size()),
+				static_cast<size_t>(buffer.size()),
 				is_nonblocking ? MSG_DONTWAIT : 0
 			); receive_result >= 0)
 		{
@@ -1083,9 +1083,9 @@ private:
 		auto const port_string = std::to_string(port);
 		auto const hints = addrinfo{
 			.ai_flags{},
-			.ai_family{AF_UNSPEC},
-			.ai_socktype{SOCK_STREAM},
-			.ai_protocol{IPPROTO_TCP},
+			.ai_family = AF_UNSPEC,
+			.ai_socktype = SOCK_STREAM,
+			.ai_protocol = IPPROTO_TCP,
 			.ai_addrlen{},
 			.ai_addr{},
 			.ai_canonname{},
@@ -1122,7 +1122,7 @@ private:
 		while (::connect(
 				socket_handle.get(), 
 				address_info_->ai_addr, 
-				static_cast<int>(address_info_->ai_addrlen)
+				static_cast<socklen_t>(address_info_->ai_addrlen)
 			) == -1)
 		{
 			if (auto const error_code = errno; error_code != EINPROGRESS) {

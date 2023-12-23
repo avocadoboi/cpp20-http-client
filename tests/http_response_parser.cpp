@@ -4,14 +4,14 @@ void test_response_parser(std::string_view const input, algorithms::ParsedRespon
 {
 	auto const response_data = utils::string_to_data<std::byte>(input);
 
-	for (std::size_t const packet_size : {1, 8, 32, 128, 512, 2048})
+	for (auto const packet_size : {1, 8, 32, 128, 512, 2048})
 	{
 		auto parser = algorithms::ResponseParser{};
 
-		for (auto pos = std::size_t{};; pos += packet_size) 
+		for (auto pos = std::size_t{};; pos += static_cast<std::size_t>(packet_size))
 		{
 			if (auto const result = parser.parse_new_data(
-					response_data.subspan(pos, std::min(response_data.size() - pos, packet_size))
+					response_data.subspan(pos, std::min(response_data.size() - pos, static_cast<std::size_t>(packet_size)))
 				))
 			{
 				REQUIRE(result == expected_result);

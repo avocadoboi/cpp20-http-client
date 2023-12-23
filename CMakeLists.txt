@@ -15,7 +15,7 @@ option(CPP20_HTTP_CLIENT_ENABLE_INSTALL "Generate the install target" ON)
 add_library(cpp20_http_client STATIC source/cpp20_http_client.cpp)
 add_library(Cpp20HttpClient::cpp20_http_client ALIAS cpp20_http_client)
 
-set_target_properties(cpp20_http_client PROPERTIES CXX_EXTENSIONS off)
+set_target_properties(cpp20_http_client PROPERTIES CXX_EXTENSIONS OFF)
 
 if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
 	add_compile_options(/utf-8)
