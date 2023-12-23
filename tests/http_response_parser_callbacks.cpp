@@ -1,5 +1,7 @@
 ﻿#include "testing_header.hpp"
 
+#include <cmath>
+
 [[nodiscard]]
 auto parse_input_in_chunks(algorithms::ResponseParser&& parser, std::string_view const input_string, std::size_t const chunk_size) 
 	-> algorithms::ParsedResponse

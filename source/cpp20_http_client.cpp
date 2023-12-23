@@ -1086,7 +1086,7 @@ private:
 		auto const hints = addrinfo{
 			.ai_flags{},
 			.ai_family = AF_UNSPEC,
-			.ai_socktype= SOCK_STREAM,
+			.ai_socktype = SOCK_STREAM,
 			.ai_protocol = IPPROTO_TCP,
 			.ai_addrlen{},
 			.ai_addr{},
