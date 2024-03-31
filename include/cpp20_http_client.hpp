@@ -1264,6 +1264,15 @@ public:
 		return url_;
 	}
 
+	/*
+		Return the total time as an std::chrono::duration<double, std::milli> object thus in µs (microseconds).
+		If you wish to convert it to another unit, use: std::chrono::duration_cast<>().
+	*/
+	[[nodiscard]]
+	std::chrono::duration<double, std::milli> get_total_time() const {
+		return total_time_;
+	}
+
 	// std::future requires default constructibility on MSVC... Because of ABI stability.
 	Response() = default;
 	~Response() = default;
@@ -1274,14 +1283,16 @@ public:
 	Response(Response&&) noexcept = default;
 	Response& operator=(Response&&) noexcept = default;
 
-	Response(algorithms::ParsedResponse&& parsed_response, std::string&& url) :
+	Response(algorithms::ParsedResponse&& parsed_response, std::string&& url, const std::chrono::duration<double, std::milli>&& total_time) :
 		parsed_response_{std::move(parsed_response)},
-		url_{std::move(url)}
+		url_{std::move(url)},
+		total_time_{std::move(total_time)}
 	{}
 
 private:
 	algorithms::ParsedResponse parsed_response_;
 	std::string url_;
+	std::chrono::duration<double, std::milli> total_time_;
 };
 
 namespace algorithms {
@@ -1616,10 +1627,10 @@ private:
 
 template<std::size_t buffer_size = std::size_t{1} << 12>
 [[nodiscard]]
-inline Response receive_response(Socket const&& socket, std::string&& url, ResponseCallbacks&& callbacks) {
+inline Response receive_response(Socket const&& socket, std::string&& url, ResponseCallbacks&& callbacks, const std::chrono::steady_clock::time_point&& start_time_point) {
 	auto has_stopped = false;
 	callbacks.handle_stop = [&has_stopped]{ has_stopped = true; };
-	
+
 	auto response_parser = algorithms::ResponseParser{callbacks};
 
 	auto read_buffer = std::array<std::byte, buffer_size>();
@@ -1632,7 +1643,12 @@ inline Response receive_response(Socket const&& socket, std::string&& url, Respo
 					std::span{read_buffer}.first(std::get<std::size_t>(read_result))
 				))
 			{
-				auto response = Response{std::move(*parse_result), std::move(url)};
+				// Calculate the total total duration
+				// Total time = End time - Start time
+				const auto end_time_point = std::chrono::steady_clock::now();
+				const std::chrono::duration<double, std::milli> total_time_duration = end_time_point - start_time_point;
+				// Create Response object
+				auto response = Response{std::move(*parse_result), std::move(url), std::move(total_time_duration)};
 				if (callbacks.handle_finish) {
 					callbacks.handle_finish(response);
 				}
@@ -1803,7 +1819,7 @@ public:
 		Sends the request and blocks until the response has been received.
 	*/
 	Response send() && {
-		return algorithms::receive_response<>(send_and_get_receive_socket_(), std::move(url_), std::move(callbacks_));
+		return algorithms::receive_response<>(send_and_get_receive_socket_(), std::move(url_), std::move(callbacks_), std::move(start_time_point_));
 	}
 	/*
 		Sends the request and blocks until the response has been received.
@@ -1815,14 +1831,14 @@ public:
 	*/
 	template<std::size_t buffer_size>
 	Response send() && {
-		return algorithms::receive_response<buffer_size>(send_and_get_receive_socket_(), std::move(url_), std::move(callbacks_));
+		return algorithms::receive_response<buffer_size>(send_and_get_receive_socket_(), std::move(url_), std::move(callbacks_), std::move(start_time_point_));
 	}
 	/*
 		Sends the request and returns immediately after the data has been sent.
 		The returned future receives the response asynchronously.
 	*/
 	std::future<Response> send_async() && {
-		return std::async(&algorithms::receive_response<>, send_and_get_receive_socket_(), std::move(url_), std::move(callbacks_));
+		return std::async(&algorithms::receive_response<>, send_and_get_receive_socket_(), std::move(url_), std::move(callbacks_), std::move(start_time_point_));
 	}
 	/*
 		Sends the request and returns immediately after the data has been sent.
@@ -1835,7 +1851,7 @@ public:
 	*/
 	template<std::size_t buffer_size>
 	std::future<Response> send_async() && {
-		return std::async(&algorithms::receive_response<buffer_size>, send_and_get_receive_socket_(), std::move(url_), std::move(callbacks_));
+		return std::async(&algorithms::receive_response<buffer_size>, send_and_get_receive_socket_(), std::move(url_), std::move(callbacks_), std::move(start_time_point_));
 	}
 
 	Request() = delete;
@@ -1850,6 +1866,9 @@ public:
 private:
 	[[nodiscard]]
 	Socket send_and_get_receive_socket_() {
+		// Start duration time measurement
+		start_time_point_ = std::chrono::steady_clock::now();
+
 		auto socket = open_socket(url_components_.host, url_components_.port, utils::is_protocol_tls_encrypted(url_components_.protocol));
 		
 		using namespace std::string_view_literals;
@@ -1882,6 +1901,8 @@ private:
 	utils::DataVector body_;
 
 	algorithms::ResponseCallbacks callbacks_;
+
+	std::chrono::steady_clock::time_point start_time_point_;
 
 	Request(RequestMethod const method, std::string_view const url, Protocol const default_protocol) :
 		method_{method},
