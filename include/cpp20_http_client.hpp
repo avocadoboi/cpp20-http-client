@@ -1154,7 +1154,7 @@ public:
 	{}
 
 private:
-	bool is_stopped_{false};
+	bool is_stopped_{};
 };
 
 class ResponseProgressHeaders : public algorithms::ParsedHeadersInterface {
@@ -1469,6 +1469,7 @@ private:
 	}
 
 	void try_parse_headers_(std::size_t const new_data_start) {
+		// Only do anything if the headers are completely received.
 		if (auto const headers_string = try_extract_headers_string_(new_data_start))
 		{
 			result_.headers_string = *headers_string;
@@ -1506,13 +1507,26 @@ private:
 			}
 		}
 	}
+	/*
+		Checks whether the headers have been completely received from the server and if so returns them as a string.
+		Otherwise returns an empty `std::optional`.
+
+		`new_data_start` is the byte index of the beginning of the new data chunk inside `buffer_`.
+	*/
 	[[nodiscard]]
 	std::optional<std::string_view> try_extract_headers_string_(std::size_t const new_data_start) {
-		// '\n' line endings are not conformant with the HTTP standard.
+		// An empty line marks the end of the headers part of the response.
+		// '\n' line endings are not conformant with the HTTP standard but may appear anyways.
 		for (std::string_view const empty_line : {"\r\n\r\n", "\n\n"})
 		{
-			auto const find_start = new_data_start >= empty_line.length() - 1 ? new_data_start - (empty_line.length() - 1) : std::size_t{};
+			// The byte index inside buffer_ to start searching for an empty line at.
+			// This could just be set to zero but to minimize the amount of text to search,
+			// we start at the latest point where we have not searched yet.
+			auto const find_start = new_data_start >= empty_line.length() - 1 
+				? new_data_start - (empty_line.length() - 1)
+				: std::size_t{};
 			
+			// String view of the whole buffer_ which has been received at this point.
 			auto const string_view_to_search = utils::data_to_string(std::span{buffer_});
 
 			if (auto const position = string_view_to_search.find(empty_line, find_start);
@@ -1539,8 +1553,7 @@ private:
 	}
 
 	void parse_new_chunky_body_data_(std::size_t const new_data_start) {
-		// May need to add an offset if this packet is
-		// where the headers end and the body starts.
+		// May need to add an offset if this packet is where the headers end and the body starts.
 		auto const body_parse_start = std::max(new_data_start, body_start_);
 		if (auto body = chunky_body_parser_->parse_new_data(std::span{buffer_}.subspan(body_parse_start))) 
 		{
@@ -1614,9 +1627,12 @@ private:
 	std::optional<ResponseCallbacks*> callbacks_;
 };
 
-template<std::size_t buffer_size = std::size_t{1} << 12>
+constexpr auto default_receive_buffer_size = std::size_t{1} << 12;
+
+template<std::size_t buffer_size = default_receive_buffer_size>
 [[nodiscard]]
 inline Response receive_response(Socket const&& socket, std::string&& url, ResponseCallbacks&& callbacks) {
+	// Does not need to be atomic because handle_stop will always be called from this thread.
 	auto has_stopped = false;
 	callbacks.handle_stop = [&has_stopped]{ has_stopped = true; };
 	
@@ -1644,6 +1660,8 @@ inline Response receive_response(Socket const&& socket, std::string&& url, Respo
 
 	utils::unreachable();
 }
+
+
 
 } // namespace algorithms
 
@@ -1684,6 +1702,8 @@ inline std::string_view request_method_to_string(RequestMethod const method) {
 	}
 	utils::unreachable();
 }
+
+//---------------------------------------------------------
 
 /*
 	Represents a HTTP request.
@@ -1774,12 +1794,21 @@ public:
 	Request&& set_body(std::string_view const body_data) && {
 		return std::move(*this).set_body(utils::string_to_data<std::byte>(body_data));
 	}
-
+	/*
+		Sets a callback to be called after every chunk or buffer of response data has been received from the server.
+		The callback takes a mutable ResponseProgressRaw reference which is used to retrieve the data
+		and possibly stop receiving data from the server.
+	*/
 	[[nodiscard]]
 	Request&& set_raw_progress_callback(std::function<void(ResponseProgressRaw&)> callback) && {
 		callbacks_.handle_raw_progress = std::move(callback);
 		return std::move(*this);
 	}
+	/*
+		Sets a callback to be called as soon as the whole header portion of the response has been received.
+		The callback takes a mutable ResponseProgressHeaders reference which is used to retrieve the parsed header data
+		and possibly stop receiving data from the server.
+	*/
 	[[nodiscard]]
 	Request&& set_headers_callback(std::function<void(ResponseProgressHeaders&)> callback) && {
 		callbacks_.handle_headers = std::move(callback);
@@ -1793,6 +1822,17 @@ public:
 	[[nodiscard]]
 	Request&& set_finish_callback(std::function<void(Response&)> callback) && {
 		callbacks_.handle_finish = std::move(callback);
+		return std::move(*this);
+	}
+
+	/*
+		Sets a flag such that redirects are followed automatically.
+		This happens when either StatusCode::MovedPermanently (301) and StatusCode::Found (302) is received
+		and the server supplies a URL to follow via a "location" header.
+	*/
+	[[nodiscard]]
+	Request&& follow_redirects() && {
+		follow_redirects_ = true;
 		return std::move(*this);
 	}
 
@@ -1875,6 +1915,8 @@ private:
 
 	RequestMethod method_;
 
+	bool follow_redirects_{};
+
 	std::string url_;
 	utils::UrlComponents url_components_;
 
@@ -1934,7 +1976,7 @@ inline Request put(std::string_view const url, Protocol const default_protocol =
 }
 
 /*
-	Creates a http request.
+	Creates a http(s) request.
 	Can be used to do the same things as get() and post(), but with more method options.
 	If url contains a protocol prefix, it is used. Otherwise, default_protocol is used.
 */
