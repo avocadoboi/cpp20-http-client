@@ -1898,12 +1898,18 @@ private:
 			headers_ += std::format("Transfer-Encoding: identity\r\nContent-Length: {}\r\n", body_.size());
 		}
 		
+		std::string host_header_value{url_components_.host};
+		if (url_components_.port != utils::default_port_for_protocol(url_components_.protocol)) {
+			host_header_value += ':';
+			host_header_value += std::to_string(url_components_.port);
+		}
+		
 		auto const request_data = utils::concatenate_byte_data(
 			request_method_to_string(method_),
 			' ',
 			url_components_.path,
 			" HTTP/1.1\r\nHost: "sv,
-			url_components_.host,
+			host_header_value,
 			headers_,
 			"\r\n"sv,
 			body_
