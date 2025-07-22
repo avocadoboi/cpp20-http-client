@@ -1895,7 +1895,7 @@ private:
 		using namespace std::string_view_literals;
 
 		if (!body_.empty()) {
-			headers_ += std::format("Transfer-Encoding: identity\r\nContent-Length: {}\r\n", body_.size());
+			headers_ += std::format("Content-Length: {}\r\n", body_.size());
 		}
 		
 		std::string host_header_value{url_components_.host};
