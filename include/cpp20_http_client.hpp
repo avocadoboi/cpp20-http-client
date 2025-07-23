@@ -259,29 +259,10 @@ template<typename Range_, typename Value_>
 concept IsInputRangeOf = std::ranges::input_range<Range_> && std::same_as<std::ranges::range_value_t<Range_>, Value_>;
 
 template<typename Range_, typename Value_>
+concept IsContiguousRangeOf = std::ranges::contiguous_range<Range_> && std::same_as<std::ranges::range_value_t<Range_>, Value_>;
+
+template<typename Range_, typename Value_>
 concept IsSizedRangeOf = IsInputRangeOf<Range_, Value_> && std::ranges::sized_range<Range_>;
-
-/*
-	Converts a range of contiguous characters to a std::basic_string_view.
-
-	TODO: Remove this in C++23; std::views::split will return contiguous ranges and std::basic_string_view will have a range constructor.
-*/
-constexpr auto range_to_string_view = []<
-	/* 
-		std::views::split returns a range of ranges.
-		The ranges unfortunately are not std::ranges::contiguous_range
-		even when the base type is contiguous, so we can't use that constraint.
-
-		This will be fixed :^D 
-		http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p2210r2.html
-	*/
-	IsInputRangeOf<char> Range_
-> (Range_&& range) {
-	return std::string_view{
-		&*std::ranges::begin(range), 
-		static_cast<std::string_view::size_type>(std::ranges::distance(range))
-	};
-};
 
 //---------------------------------------------------------
 
@@ -477,7 +458,6 @@ struct UrlComponents {
 	Port port{default_port_for_protocol(Protocol::Unknown)};
 	std::string_view path;
 };
-
 
 struct HostAndPort {
 	std::string_view host;
@@ -1009,8 +989,9 @@ inline std::vector<Header> parse_headers_string(std::string_view const headers)
 
 	std::ranges::copy(
 		headers 
-		| std::views::split('\n') | std::views::transform(utils::range_to_string_view)
-		| std::views::transform(parse_header) | utils::filter_true | utils::dereference_move,
+		| std::views::split('\n')
+		| std::views::transform([](auto const r) { return parse_header(std::string_view{r}); }) 
+		| utils::filter_true | utils::dereference_move,
 		std::back_inserter(result)
 	);
 
@@ -1507,12 +1488,11 @@ private:
 			}
 		}
 	}
-	/*
-		Checks whether the headers have been completely received from the server and if so returns them as a string.
-		Otherwise returns an empty `std::optional`.
-
-		`new_data_start` is the byte index of the beginning of the new data chunk inside `buffer_`.
-	*/
+	/**
+	 * Checks whether the headers have been completely received from the server and if so returns them as a string.
+	 * Otherwise returns an empty `std::optional`.
+	 * \param new_data_start The byte index of the beginning of the new data chunk inside `buffer_`. 
+	 */
 	[[nodiscard]]
 	std::optional<std::string_view> try_extract_headers_string_(std::size_t const new_data_start) {
 		// An empty line marks the end of the headers part of the response.
@@ -1903,11 +1883,12 @@ private:
 			' ',
 			url_components_.path,
 			" HTTP/1.1\r\nHost: "sv,
-			url_components_.host,
+			std::format("{}:{}", url_components_.host, url_components_.port),
 			headers_,
 			"\r\n"sv,
 			body_
 		);
+		std::println(request_data)
 		socket.write(request_data);
 
 		return socket;

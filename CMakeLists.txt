@@ -22,7 +22,7 @@ if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
 	# Concepts are (or were) only available in /std:c++latest, not in /std:c++20
 	target_compile_options(cpp20_http_client PUBLIC /std:c++latest)
 else ()
-	target_compile_features(cpp20_http_client PUBLIC cxx_std_20)
+	target_compile_features(cpp20_http_client PUBLIC cxx_std_23)
 endif ()
 
 target_include_directories(cpp20_http_client PUBLIC 
