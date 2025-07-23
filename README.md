@@ -82,6 +82,7 @@ include(FetchContent)
 FetchContent_Declare(
     Cpp20HttpClient
     GIT_REPOSITORY https://github.com/avocadoboi/cpp20-http-client.git
+    GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(Cpp20HttpClient)
 
