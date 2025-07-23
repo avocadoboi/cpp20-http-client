@@ -1895,7 +1895,7 @@ private:
 		using namespace std::string_view_literals;
 
 		if (!body_.empty()) {
-			headers_ += std::format("Transfer-Encoding: identity\r\nContent-Length: {}\r\n", body_.size());
+			headers_ += std::format("Content-Length: {}\r\n", body_.size());
 		}
 		
 		auto const request_data = utils::concatenate_byte_data(
@@ -1903,11 +1903,17 @@ private:
 			' ',
 			url_components_.path,
 			" HTTP/1.1\r\nHost: "sv,
-			url_components_.host,
+			url_components_.port == utils::default_port_for_protocol(url_components_.protocol) ? 
+				url_components_.host : 
+				std::format("{}:{}", url_components_.host, url_components_.port),
 			headers_,
 			"\r\n"sv,
 			body_
 		);
+
+		// In case you want to look at the request:
+		// std::println("{}", std::string_view{reinterpret_cast<char const*>(request_data.data()), request_data.size()});
+
 		socket.write(request_data);
 
 		return socket;
