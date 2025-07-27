@@ -1,18 +1,24 @@
 #include <cpp20_http_client.hpp>
+#include <print>
 
 int main() {
     auto url = std::string{};
-    std::cout << "Please enter a URL: ";
+    std::print("Please enter a URL: ");
     std::cin >> url;
 
     auto response_count = 0;
 
     while (true) {
-        auto const response = http_client::get(url).send();
+        auto const response = http_client::get(url)
+            .set_headers_callback([](http_client::ResponseProgressHeaders& headers) {
+                // If you want to ignore the body when the status code is not OK.
+                if (headers.get_status_code() != http_client::StatusCode::Ok) {
+                    headers.stop();
+                }
+            })
+            .send();
 
-        std::cout << "\nHeaders " << response_count++ << ": \n" << response.get_headers_string() << '\n';
-        // TODO: replace with this when GCC supports std::format
-        // utils::println("\nHeaders {}: \n{}", response_count++, response.get_headers_string());
+        std::println("\nHeaders {}: \n{}", response_count++, response.get_headers_string());
 
         if (response.get_status_code() == http_client::StatusCode::MovedPermanently ||
             response.get_status_code() == http_client::StatusCode::Found) 
@@ -23,7 +29,7 @@ int main() {
             }
         }
         else {
-            std::cout << "\nBody:\n" << response.get_body_string() << '\n';
+            std::println("\nBody:\n{}", response.get_body_string());
         }
         break;
     }

@@ -1,7 +1,8 @@
 #include <cpp20_http_client.hpp>
+#include <print>
 
 void handle_progress(http_client::ResponseProgressRaw const& progress) {
-	std::cout << "Received " << progress.data.size() << " bytes.\n";
+	std::println("Received {} bytes.", progress.data.size());
 }
 
 int main() {
@@ -11,13 +12,13 @@ int main() {
 		.set_raw_progress_callback(handle_progress)
 		.send_async<256>();
 
-	std::cout << "Waiting...\n";
+	std::println("Waiting...");
 
 	http_client::Response const result = response_future.get();
-	std::cout << "Got response!\n";
+	std::println("Got response!");
 
-	std::cout << "The content type is: " << 
-		result.get_header_value("content-type").value_or("Unknown") << ".\n";
+	std::println("The content type is: {}.", 
+		result.get_header_value("content-type").value_or("Unknown"));
 
-	std::cout << "Response body:\n" << result.get_body_string() << "\n";
+	std::println("Response body:\n{}", result.get_body_string());
 }

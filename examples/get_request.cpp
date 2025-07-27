@@ -1,14 +1,15 @@
 #include <cpp20_http_client.hpp>
+#include <print>
 
 using namespace std::string_view_literals;
 
 std::string read_url() {
-	std::cout << "Please enter a url: ";
+	std::print("Please enter a url: ");
 	
 	auto url = std::string{};
 	std::cin >> url;
 	
-	std::cout << '\n';
+	std::println();
 
 	return url;	
 }
@@ -24,25 +25,33 @@ http_client::Response send_request(std::string_view const url) {
 		).add_headers({ // Initializer list
 			{.name="Six", .value="fff"},
 			{.name="Four", .value="ggg"},
+		}).set_headers_callback([](http_client::ResponseProgressHeaders& headers) {
+			if (headers.get_status_code() == http_client::StatusCode::Ok) {
+				std::println("Got status code 200 OK, continuing to read body...");
+			}
+			else {
+				std::println("Got status code {}, stopping reading body.", static_cast<int>(headers.get_status_code()));
+				headers.stop(); // Stop reading the body if the status code is not OK.
+			}
 		}).send();
 }
 
 void use_response(http_client::Response const& response) {
 	auto const response_headers = response.get_headers_string();
-	std::cout << "Response headers below.\n\n" << response_headers << "\n\n";
+	std::println("Response headers below.\n\n{}\n", response_headers);
 
 	if (auto const last_modified = response.get_header_value("last-modified")) { // Case insensitive
-		std::cout << "The resource was last modified " << *last_modified << '\n';
+		std::println("The resource was last modified {}", *last_modified);
 	}
 	else {
-		std::cout << "No last-modified header.\n";
+		std::println("No last-modified header.");
 	}
 
 	if (auto const content_type = response.get_header_value("content-type")) {
-		std::cout << "The content type is " << *content_type << '\n';
+		std::println("The content type is {}", *content_type);
 	}
 	else {
-		std::cout << "No content-type header.\n";
+		std::println("No content-type header.");
 	}
 
 	auto const url = response.get_url();
@@ -56,7 +65,7 @@ void use_response(http_client::Response const& response) {
 		}
 	}();
 
-	std::cout << "Writing body to file with name: " << filename << '\n';
+	std::println("Writing body to file with name: {}", filename);
 	http_client::utils::write_to_file(response.get_body(), std::string{filename});
 }
 
@@ -68,10 +77,10 @@ http_client::Response do_request() {
 
 		// Handle possible TLS redirect
 		if (response.get_status_code() == http_client::StatusCode::MovedPermanently||
-            response.get_status_code() == http_client::StatusCode::Found) 
+			response.get_status_code() == http_client::StatusCode::Found)
 		{
 			if (auto const new_url = response.get_header_value("location")) {
-				std::cout << "Got status code moved permanently or found, redirecting to " << *new_url << "...\n\n";
+				std::println("Got status code moved permanently or found, redirecting to {}...\n", *new_url);
 				url = *new_url;
 				continue;
 			}
@@ -86,8 +95,8 @@ int main() {
 		use_response(response);
 	}
 	catch (http_client::errors::ConnectionFailed const& error) {
-		std::cout << "The connection failed with error \"" << error.what() << '"';
+		std::println("The connection failed with error \"{}\"", error.what());
 	}
 
-	std::cout << "\n\n";
+	std::print("\n\n");
 }
