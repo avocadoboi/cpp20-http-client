@@ -1,7 +1,7 @@
 /*
 MIT License
 
-Copyright (c) 2021-2023 Björn Sundin
+Copyright (c) 2021-2025 Björn Sundin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -62,24 +62,24 @@ namespace http_client {
 
 using Port = int;
 
-/*
-	An enumeration of the transfer protocols that are supported by the library.
-*/
+/**
+ * An enumeration of the transfer protocols that are supported by the library.
+ */
 enum class Protocol : Port {
 	Http = 80,
 	Https = 443,
 	Unknown = -1, 
 };
 
-/*
-	This is everything that doesn't have anything to do with the core functionality, 
-	but are utilities that are used within the library.
-*/
+/**
+ * This is everything that doesn't have anything to do with the core functionality, 
+ * but are utilities that are used within the library.
+ */
 namespace utils {
 
-/*
-	IsAnyOf<T, U, V, W, ...> is true if T is the same type as one or more of U, V, W, ...
-*/
+/**
+ * `IsAnyOf<T, U, V, W, ...>` is true if `T` is the same type as one or more of `U, V, W, ...`
+ */
 template<typename T, typename ... U>
 concept IsAnyOf = (std::same_as<T, U> || ...);
 
@@ -88,18 +88,18 @@ concept IsAnyOf = (std::same_as<T, U> || ...);
 template<typename T>
 concept IsTrivial = std::is_trivial_v<T>;
 
-/*
-	Aliasing with types for which IsByte is true is allowed and does not invoke undefined behavior.
-	https://en.cppreference.com/w/cpp/language/reinterpret_cast
-*/
+/**
+ * Aliasing with types for which `IsByte` is true is allowed and does not invoke undefined behavior.
+ * https://en.cppreference.com/w/cpp/language/reinterpret_cast
+ */
 template<typename T>
 concept IsByte = IsAnyOf<std::remove_cvref_t<T>, std::byte, char, unsigned char>;
 
 //---------------------------------------------------------
 
-/*
-	Used to invoke a lambda at the end of a scope.
-*/
+/**
+ * Used to invoke a lambda at the end of a scope.
+ */
 template<std::invocable T>
 class [[nodiscard]] Cleanup {
 public:
@@ -125,17 +125,17 @@ private:
 
 //---------------------------------------------------------
 
-/*
-	Similar to std::unique_ptr except that non-pointer types can be held
-	and that a custom deleter must be specified. 
-
-	This is useful for OS handles that are integer types, for example a native socket handle.
-	Use C++20 lambdas in unevaluated contexts to specify a deleter, or use an already defined 
-	functor type. 
-	
-	Example:
-	using DllHandle = utils::UniqueHandle<HMODULE, decltype([](auto& h){ FreeLibrary(h); })>;
-*/
+/**
+ * Similar to `std::unique_ptr` except that non-pointer types can be held
+ * and that a custom deleter must be specified. 
+ * 
+ * This is useful for OS handles that are integer types, for example a native socket handle.
+ * Use C++20 lambdas in unevaluated contexts to specify a deleter, or use an already defined 
+ * functor type. 
+ * 
+ * Example:
+ * `using DllHandle = utils::UniqueHandle<HMODULE, decltype([](auto& h){ FreeLibrary(h); })>;`
+ */
 template<IsTrivial T, std::invocable<T&> Deleter_, T invalid_handle = T{}>
 class UniqueHandle {
 public:
@@ -225,10 +225,10 @@ private:
 
 //---------------------------------------------------------
 
-/*
-	This can be called when the program reaches a path that should never be reachable.
-	It prints error output and exits the program.
-*/
+/**
+ * This can be called when the program reaches a path that should never be reachable.
+ * It prints error output and exits the program.
+ */
 #ifdef __cpp_lib_source_location
 [[noreturn]]
 inline void unreachable(std::source_location const& source_location = std::source_location::current()) {
@@ -244,9 +244,9 @@ inline void unreachable() {
 }
 #endif
 
-/*
-	Prints an error message to the error output stream and exits the program.
-*/
+/**
+ * Prints an error message to the error output stream and exits the program.
+ */
 [[noreturn]]
 inline void panic(std::string_view const message) {
 	std::cerr << message << '\n';
@@ -270,9 +270,9 @@ void enable_utf8_console();
 
 //---------------------------------------------------------
 
-/*
-	Copies a sized range to a std::basic_string of any type.
-*/
+/**
+ * Copies a sized range to a `std::basic_string` of any type.
+ */
 template<IsSizedRangeOf<char> Range_> 
 [[nodiscard]]
 inline std::string range_to_string(Range_ const& range) {
@@ -281,9 +281,9 @@ inline std::string range_to_string(Range_ const& range) {
 	return result;
 }
 
-/*
-	Copies a range of unknown size to a std::basic_string of any type.
-*/
+/**
+ * Copies a range of unknown size to a `std::basic_string` of any type.
+ */
 template<IsInputRangeOf<char> Range_> 
 [[nodiscard]]
 inline std::string range_to_string(Range_ const& range) {
@@ -292,17 +292,17 @@ inline std::string range_to_string(Range_ const& range) {
 	return result;
 }
 
-/*
-	Reinterprets a span of any byte-sized trivial type as a string view of a specified byte-sized character type.
-*/
+/**
+ * Reinterprets a span of any byte-sized trivial type as a string view of a specified byte-sized character type.
+ */
 template<IsByte Byte_>
 [[nodiscard]] 
 std::string_view data_to_string(std::span<Byte_> const data) {
 	return std::string_view{reinterpret_cast<char const*>(data.data()), data.size()};
 }
-/*
-	Reinterprets a string view of any byte-sized character type as a span of any byte-sized trivial type.
-*/
+/**
+ * Reinterprets a string view of any byte-sized character type as a span of any byte-sized trivial type.
+ */
 template<IsByte Byte_>
 [[nodiscard]]
 std::span<Byte_ const> string_to_data(std::string_view const string) {
@@ -325,9 +325,9 @@ void append_to_vector(std::vector<T>& vector, std::span<T const> const data) {
 template<typename T>
 concept IsByteData = IsByte<T> || std::ranges::range<T> && IsByte<std::ranges::range_value_t<T>>;
 
-/*
-	Returns the size of any trivial byte-sized element or range of trivial byte-sized elements.
-*/
+/**
+ * Returns the size of any trivial byte-sized element or range of trivial byte-sized elements.
+ */
 template<IsByteData T>
 [[nodiscard]]
 std::size_t size_of_byte_data(T const& data) {
@@ -339,9 +339,9 @@ std::size_t size_of_byte_data(T const& data) {
 	}
 }
 
-/*
-	Copies any type of trivial byte-sized element(s) from data to range.
-*/
+/**
+ * Copies any type of trivial byte-sized element(s) from data to range.
+ */
 template<IsByteData Data_, std::ranges::contiguous_range Range_, IsByte RangeValue_ = std::ranges::range_value_t<Range_>> 
 [[nodiscard]]
 auto copy_byte_data(Data_ const& data, Range_& range) 
@@ -359,11 +359,11 @@ auto copy_byte_data(Data_ const& data, Range_& range)
 	}
 }
 
-/*
-	Concatenates any kind of sequence of trivial byte-sized elements like char and std::byte.
-	The arguments can be individual bytes and/or ranges of bytes.
-	Returns a utils::DataVector (std::vector<std::byte>).
-*/
+/**
+ * Concatenates any kind of sequence of trivial byte-sized elements like char and std::byte.
+ * The arguments can be individual bytes and/or ranges of bytes.
+ * Returns a utils::DataVector (std::vector<std::byte>).
+ */
 template<IsByteData ... T>
 [[nodiscard]]
 DataVector concatenate_byte_data(T const& ... arguments) {
@@ -375,10 +375,10 @@ DataVector concatenate_byte_data(T const& ... arguments) {
 
 //---------------------------------------------------------
 
-/*
-	Parses a string as an integer type in a given base.
-	For more details, see std::from_chars. This is just an abstraction layer on top of it.
-*/
+/**
+ * Parses a string as an integer type in a given base.
+ * For more details, see std::from_chars. This is just an abstraction layer on top of it.
+ */
 template<std::integral T>
 [[nodiscard]]
 std::optional<T> string_to_integral(std::string_view const string, int const base = 10) 
@@ -404,16 +404,16 @@ void write_to_file(DataRange_ const& data, std::string const& file_name) {
 constexpr auto filter_true = std::views::filter([](auto const& x){ return static_cast<bool>(x); });
 constexpr auto dereference_move = std::views::transform([](auto&& x) { return std::move(*x); });
 
-/*
-	Transforms a range of chars into its lowercase equivalent.
-*/
+/**
+ * Transforms a range of chars into its lowercase equivalent.
+ */
 constexpr auto ascii_lowercase_transform = std::views::transform([](char const c) { 
 	return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 });
 
-/*
-	Returns whether lhs and rhs are equal, regardless of casing, assuming both are encoded in ASCII.
-*/
+/**
+ * Returns whether lhs and rhs are equal, regardless of casing, assuming both are encoded in ASCII.
+ */
 [[nodiscard]]
 constexpr bool equal_ascii_case_insensitive(std::string_view const lhs, std::string_view const rhs) noexcept {
 	return std::ranges::equal(lhs | ascii_lowercase_transform, rhs | ascii_lowercase_transform);
@@ -421,9 +421,9 @@ constexpr bool equal_ascii_case_insensitive(std::string_view const lhs, std::str
 
 //---------------------------------------------------------
 
-/*
-	Returns the default port corresponding to the specified protocol.
-*/
+/**
+ * Returns the default port corresponding to the specified protocol.
+ */
 [[nodiscard]]
 constexpr Port default_port_for_protocol(Protocol const protocol) noexcept {
 	return static_cast<Port>(protocol);
@@ -434,10 +434,10 @@ constexpr bool is_protocol_tls_encrypted(Protocol const protocol) noexcept {
 	return protocol == Protocol::Https;
 }
 
-/*
-	Returns the protocol that corresponds to the specified case-insensitive string.
-	For example, "http" converts to Protocol::Http.
-*/
+/**
+ * Returns the protocol that corresponds to the specified case-insensitive string.
+ * For example, "http" converts to Protocol::Http.
+ */
 [[nodiscard]]
 constexpr Protocol get_protocol_from_string(std::string_view const protocol_string) noexcept {
 	if (equal_ascii_case_insensitive(protocol_string, "http")) {
@@ -449,9 +449,9 @@ constexpr Protocol get_protocol_from_string(std::string_view const protocol_stri
 	return Protocol::Unknown;
 }
 
-/*
-	The result of the split_url function.
-*/
+/**
+ * The result of the split_url function.
+ */
 struct UrlComponents {
 	Protocol protocol{Protocol::Unknown};
 	std::string_view host;
@@ -464,11 +464,11 @@ struct HostAndPort {
 	std::optional<Port> port;
 };
 
-/*
-	Splits a domain name into a name and an optional port.
-	For example, "localhost:8080" returns "localhost" and 8080, while
-	"google.com" returns "google.com" and no port (std::nullopt).
-*/
+/**
+ * Splits a domain name into a name and an optional port.
+ * For example, "localhost:8080" returns "localhost" and 8080, while
+ * "google.com" returns "google.com" and no port (std::nullopt).
+ */
 [[nodiscard]]
 inline HostAndPort split_domain_name(std::string_view const domain_name)
 {
@@ -496,9 +496,9 @@ inline HostAndPort split_domain_name(std::string_view const domain_name)
 	};
 }
 
-/*
-	Splits an URL into its components.
-*/
+/**
+ * Splits an URL into its components.
+ */
 [[nodiscard]] 
 inline UrlComponents split_url(std::string_view const url) noexcept {
 	using namespace std::string_view_literals;
@@ -564,9 +564,9 @@ inline UrlComponents split_url(std::string_view const url) noexcept {
 	return result;
 }
 
-/*
-	Returns the file name part of a URL (or file path with only forward slashes).
-*/
+/**
+ * Returns the file name part of a URL (or file path with only forward slashes).
+ */
 [[nodiscard]]
 constexpr std::string_view extract_filename(std::string_view const url) 
 {
@@ -584,9 +584,9 @@ constexpr std::string_view extract_filename(std::string_view const url)
 	return {};
 }
 
-/*
-	Returns whether character is allowed in a URI-encoded string or not.
-*/
+/**
+ * Returns whether character is allowed in a URI-encoded string or not.
+ */
 [[nodiscard]]
 constexpr bool get_is_allowed_uri_character(char const character) noexcept {
 	constexpr auto other_characters = std::string_view{"%-._~:/?#[]@!$&'()*+,;="};
@@ -597,9 +597,9 @@ constexpr bool get_is_allowed_uri_character(char const character) noexcept {
 		other_characters.find(character) != std::string_view::npos;
 }
 
-/*
-	Returns the URI-encoded equivalent of uri.
-*/
+/**
+ * Returns the URI-encoded equivalent of uri.
+ */
 [[nodiscard]]
 inline std::string uri_encode(std::string_view const uri) {
 	auto result_string = std::string();
@@ -628,10 +628,10 @@ inline std::string uri_encode(std::string_view const uri) {
 
 namespace errors {
 
-/*
-	The connection to the server failed in some way.
-	For example, there is no internet connection or the server name is invalid.
-*/
+/**
+ * The connection to the server failed in some way.
+ * For example, there is no internet connection or the server name is invalid.
+ */
 class ConnectionFailed : public std::exception {
 public:
 	[[nodiscard]]
@@ -673,47 +673,47 @@ private:
 
 //---------------------------------------------------------
 
-/*
-	This type is used by the Socket class to signify that 
-	the peer closed the connection during a read call.
-*/
+/**
+ * This type is used by the Socket class to signify that 
+ * the peer closed the connection during a read call.
+ */
 struct ConnectionClosed {};
 
-/*
-	An abstraction on top of low level socket and TLS encryption APIs.
-	Marking a Socket as const only means it won't be moved from or move assigned to.
-*/
+/**
+ * An abstraction on top of low level socket and TLS encryption APIs.
+ * Marking a Socket as const only means it won't be moved from or move assigned to.
+ */
 class Socket {
 public:
-	/*
-		Sends data to the peer through the socket.
-	*/
+	/**
+	 * 	Sends data to the peer through the socket.
+	 */
 	void write(std::span<std::byte const> data) const;
-	/*
-		Sends a string to the peer through the socket.
-		This function takes a basic_string_view, think about 
-		whether you want it to be null terminated or not.
-	*/
+	/**
+	 * 	Sends a string to the peer through the socket.
+	 * This function takes a basic_string_view, think about 
+	 * whether you want it to be null terminated or not.
+	 */
 	void write(std::string_view const string_view) const {
 		write(utils::string_to_data<std::byte>(string_view));
 	}
 
-	/*
-		Receives data from the socket and reads it into a buffer.
-		This function blocks until there is some data available.
-		The data that was read may be smaller than the buffer.
-		The function either returns the number of bytes that were read 
-		or a ConnectionClosed value if the peer closed the connection. 
-	*/
+	/**
+	 * 	Receives data from the socket and reads it into a buffer.
+	 * This function blocks until there is some data available.
+	 * The data that was read may be smaller than the buffer.
+	 * The function either returns the number of bytes that were read 
+	 * or a ConnectionClosed value if the peer closed the connection. 
+	 */
 	[[nodiscard("The result is important as it contains the size that was actually read.")]]
 	std::variant<ConnectionClosed, std::size_t> read(std::span<std::byte> buffer) const;
-	/*
-		Receives data from the socket.
-		This function blocks until there is some data available.
-		The function either returns the buffer that was read 
-		or a ConnectionClosed value if the peer closed the connection. 
-		The returned DataVector may be smaller than what was requested.
-	*/
+	/**
+	 * Receives data from the socket.
+	 * This function blocks until there is some data available.
+	 * The function either returns the buffer that was read 
+	 * or a ConnectionClosed value if the peer closed the connection. 
+	 * The returned DataVector may be smaller than what was requested.
+	 */
 	[[nodiscard]]
 	auto read(std::size_t const number_of_bytes = 512) const 
 		-> std::variant<ConnectionClosed, utils::DataVector> 
@@ -726,22 +726,22 @@ public:
 		return ConnectionClosed{};
 	}
 
-	/*
-		Reads any available data from the socket into a buffer.
-		This function is nonblocking, and may return std::size_t{} if 
-		there was no data available. The function either returns the number 
-		of bytes that were read or a ConnectionClosed value if the peer 
-		closed the connection.
-	*/
+	/**
+	 * Reads any available data from the socket into a buffer.
+	 * This function is nonblocking, and may return std::size_t{} if 
+	 * there was no data available. The function either returns the number 
+	 * of bytes that were read or a ConnectionClosed value if the peer 
+	 * closed the connection.
+	 */
 	[[nodiscard("The result is important as it contains the size that was actually read.")]]
 	std::variant<ConnectionClosed, std::size_t> read_available(std::span<std::byte> buffer) const;
-	/*
-		Reads any available data from the socket into a buffer.
-		This function is nonblocking, and may return an empty vector if 
-		there was no data available. The function either returns a utils::DataVector 
-		of the data that was read or a ConnectionClosed value if the peer 
-		closed the connection.
-	*/
+	/**
+	 * Reads any available data from the socket into a buffer.
+	 * This function is nonblocking, and may return an empty vector if 
+	 * there was no data available. The function either returns a utils::DataVector 
+	 * of the data that was read or a ConnectionClosed value if the peer 
+	 * closed the connection.
+	 */
 	template<std::size_t read_buffer_size = 512>
 	[[nodiscard]]
 	std::variant<ConnectionClosed, utils::DataVector> read_available() const {
@@ -781,11 +781,11 @@ private:
 	friend Socket open_socket(std::string_view, Port, bool);
 };
 
-/*
-	Opens a socket to a server through a port.
-	If port is 443 OR is_tls_encrypted is true, TLS encryption is used. 
-	Otherwise it is unencrypted.
-*/
+/**
+ * Opens a socket to a server through a port.
+ * If port is 443 OR is_tls_encrypted is true, TLS encryption is used. 
+ * Otherwise it is unencrypted.
+ */
 [[nodiscard]]
 inline Socket open_socket(std::string_view const server, Port const port, bool const is_tls_encrypted = false) {
 	return Socket{server, port, is_tls_encrypted};
@@ -795,20 +795,20 @@ inline Socket open_socket(std::string_view const server, Port const port, bool c
 
 struct Header;
 
-/*
-	Represents a HTTP header whose data was copied from somewhere at some point.
-	It consists of std::string objects instead of std::string_view.
-*/
+/**
+ * Represents a HTTP header whose data was copied from somewhere at some point.
+ * It consists of std::string objects instead of std::string_view.
+ */
 struct HeaderCopy {
 	std::string name, value;
 
 	[[nodiscard]]
 	inline explicit operator Header() const;
 };
-/*
-	Represents a HTTP header whose data is not owned by this object.
-	It consists of std::string_view objects instead of std::string.
-*/
+/**
+ * Represents a HTTP header whose data is not owned by this object.
+ * It consists of std::string_view objects instead of std::string.
+ */
 struct Header {
 	std::string_view name, value;
 
@@ -830,9 +830,9 @@ HeaderCopy::operator Header() const {
 template<typename T>
 concept IsHeader = utils::IsAnyOf<T, HeaderCopy, Header>;
 
-/*
-	Compares two headers, taking into account case insensitivity.
-*/
+/**
+ * Compares two headers, taking into account case insensitivity.
+ */
 [[nodiscard]]
 bool operator==(IsHeader auto const& lhs, IsHeader auto const& rhs) {
 	return lhs.value == rhs.value && utils::equal_ascii_case_insensitive(lhs.name, rhs.name);
@@ -1045,56 +1045,56 @@ struct ParsedHeadersInterface {
 	
 	constexpr virtual ParsedResponse const& get_parsed_response() const noexcept = 0;
 
-	/*
-		Returns the status code from the response header.
-	*/
+	/**
+	 * 	Returns the status code from the response header.
+	 */
 	[[nodiscard]]
 	StatusCode get_status_code() const {
 		return get_parsed_response().status_line.status_code;
 	}
-	/*
-		Returns the status code description from the response header.
-	*/
+	/**
+ 	 * Returns the status code description from the response header.
+	 */
 	[[nodiscard]]
 	std::string_view get_status_message() const {
 		return get_parsed_response().status_line.status_message;
 	}
-	/*
-		Returns the HTTP version from the response header.
-	*/
+	/**
+ 	 * Returns the HTTP version from the response header.
+	 */
 	[[nodiscard]]
 	std::string_view get_http_version() const {
 		return get_parsed_response().status_line.http_version;
 	}
-	/*
-		Returns a const reference to the parsed status line object.
-	*/
+	/**
+ 	 * Returns a const reference to the parsed status line object.
+	 */
 	[[nodiscard]]
 	StatusLine const& get_status_line() const {
 		return get_parsed_response().status_line;
 	}
 
-	/*
-		Returns the headers of the response as a string.
-		The returned string_view shall not outlive this Response object.
-	*/
+	/**
+ 	 * Returns the headers of the response as a string.
+	 * The returned string_view shall not outlive this Response object.
+	 */
 	[[nodiscard]] 
 	std::string_view get_headers_string() const {
 		return get_parsed_response().headers_string;
 	}
 
-	/*
-		Returns the headers of the response as Header objects.
-		The returned span shall not outlive this Response object.
-	*/
+	/**
+ 	 * Returns the headers of the response as Header objects.
+	 * The returned span shall not outlive this Response object.
+	 */
 	[[nodiscard]] 
 	std::span<Header const> get_headers() const {
 		return get_parsed_response().headers;
 	}
-	/*
-		Returns a header of the response by its name.
-		The returned header shall not outlive this Response object.
-	*/	
+	/**
+ 	 * Returns a header of the response by its name.
+	 * The returned header shall not outlive this Response object.
+	 */	
 	[[nodiscard]] 
 	std::optional<Header> get_header(std::string_view const name) const {
 		if (auto const header = algorithms::find_header_by_name(get_parsed_response().headers, name)) {
@@ -1102,10 +1102,10 @@ struct ParsedHeadersInterface {
 		}
 		else return {};
 	}
-	/*
-		Returns a header value of the response by its name.
-		The returned std::string_view shall not outlive this Response object.
-	*/
+	/**
+ 	 * Returns a header value of the response by its name.
+	 * The returned std::string_view shall not outlive this Response object.
+	 */
 	[[nodiscard]] 
 	std::optional<std::string_view> get_header_value(std::string_view const name) const {
 		if (auto const header = algorithms::find_header_by_name(get_parsed_response().headers, name)) {
@@ -1173,10 +1173,10 @@ public:
 	ResponseProgressRaw raw_progress;
 
 	std::span<std::byte const> body_data_so_far;
-	/*
-		This may not have a value if the transfer encoding is chunked, in which
-		case the full body length is not known ahead of time.
-	*/
+	/**
+	 * This may not have a value if the transfer encoding is chunked, in which
+	 * case the full body length is not known ahead of time.
+	 */
 	std::optional<std::size_t> total_expected_body_size;
 
 	constexpr void stop() noexcept {
@@ -1213,9 +1213,9 @@ private:
 	algorithms::ParsedResponse const& parsed_response_;
 };
 
-/*
-	Represents the response of a HTTP request.
-*/
+/**
+ * Represents the response of a HTTP request.
+ */
 class Response : public algorithms::ParsedHeadersInterface {
 public:
 	[[nodiscard]]
@@ -1223,18 +1223,18 @@ public:
 		return parsed_response_;
 	}
 	
-	/*
-		Returns the body of the response.
-		The returned std::span shall not outlive this Response object.
-	*/
+	/**
+	 * Returns the body of the response.
+	 * The returned std::span shall not outlive this Response object.
+	 */
 	[[nodiscard]]
 	std::span<std::byte const> get_body() const {
 		return parsed_response_.body_data;
 	}
-	/*
-		Returns the body of the response as a string.
-		The returned std::string_view shall not outlive this Response object.
-	*/
+	/**
+	 * Returns the body of the response as a string.
+	 * The returned std::string_view shall not outlive this Response object.
+	 */
 	[[nodiscard]] 
 	std::string_view get_body_string() const {
 		return utils::data_to_string(get_body());
@@ -1303,12 +1303,12 @@ public:
 private:
 	static constexpr auto newline = std::string_view{"\r\n"};
 
-	/*
-		"part" refers to a separately parsed unit of data.
-		This partitioning makes the parsing algorithm simpler.
-		Returns the position where the part ended.
-		It may be past the end of the part.
-	*/
+	/**
+	 * "part" refers to a separately parsed unit of data.
+	 * This partitioning makes the parsing algorithm simpler.
+	 * Returns the position where the part ended.
+	 * It may be past the end of the part.
+	 */
 	[[nodiscard]]
 	std::size_t parse_next_part_(std::span<std::byte const> const new_data) {
 		if (chunk_size_left_) {
@@ -1390,16 +1390,16 @@ struct ResponseCallbacks {
 	std::function<void()> handle_stop;
 };
 
-/*
-	Separate, testable module that parses a http response.
-	It has support for optional response progress callbacks.
-*/
+/**
+ * Separate, testable module that parses a http response.
+ * It has support for optional response progress callbacks.
+ */
 class ResponseParser {
 public:
-	/*
-		Parses a new packet of data from the HTTP response.
-		If it reached the end of the response, the parsed result is returned.
-	*/
+	/**
+	 * Parses a new packet of data from the HTTP response.
+	 * If it reached the end of the response, the parsed result is returned.
+	 */
 	[[nodiscard]]
 	std::optional<ParsedResponse> parse_new_data(std::span<std::byte const> const data) {
 		if (is_done_) {
@@ -1647,9 +1647,9 @@ inline Response receive_response(Socket const&& socket, std::string&& url, Respo
 
 //---------------------------------------------------------
 
-/*
-	Enumeration of the different HTTP request methods that can be used.
-*/
+/**
+ * Enumeration of the different HTTP request methods that can be used.
+ */
 enum class RequestMethod {
 	Connect,
 	Delete,
@@ -1662,10 +1662,10 @@ enum class RequestMethod {
 	Trace,
 };
 
-/*
-	Converts a RequestMethod to its uppercase string equivalent.
+/**
+ * Converts a RequestMethod to its uppercase string equivalent.
 	For example, RequestMethod::Get becomes std::string_view{"GET"}.
-*/
+ */
 [[nodiscard]]
 inline std::string_view request_method_to_string(RequestMethod const method) {
 	using enum RequestMethod;
@@ -1685,14 +1685,14 @@ inline std::string_view request_method_to_string(RequestMethod const method) {
 
 //---------------------------------------------------------
 
-/*
-	Represents a HTTP request.
+/**
+ * Represents a HTTP request.
 	It is created by calling any of the HTTP verb functions (http_client::get, http_client::post, http_client::put ...)
-*/
+ */
 class Request {
 public:
-	/*
-		Adds headers to the request as a string.
+	/**
+ * 	Adds headers to the request as a string.
 		These are in the format: "NAME: [ignored whitespace] VALUE"
 		The string can be multiple lines for multiple headers.
 		Non-ASCII bytes are considered opaque data,
@@ -1711,8 +1711,8 @@ public:
 		
 		return std::move(*this);
 	}
-	/*
-		Adds headers to the request.
+	/**
+ * 	Adds headers to the request.
 	*/
 	template<IsHeader Header_, std::size_t extent = std::dynamic_extent>
 	[[nodiscard]]
@@ -1726,15 +1726,15 @@ public:
 		
 		return std::move(*this).add_headers(headers_string);
 	}
-	/*
-		Adds headers to the request.
+	/**
+ * 	Adds headers to the request.
 	*/
 	[[nodiscard]]
 	Request&& add_headers(std::initializer_list<Header const> const headers) && {
 		return std::move(*this).add_headers(std::span{headers});
 	}
-	/*
-		Adds headers to the request.
+	/**
+ * 	Adds headers to the request.
 		This is a variadic template that can take any number of headers.
 	*/
 	template<IsHeader ... Header_>
@@ -1743,8 +1743,8 @@ public:
 		auto const headers = std::array{Header{p_headers}...};
 		return std::move(*this).add_headers(std::span{headers});
 	}
-	/*
-		Adds a single header to the request.
+	/**
+ * 	Adds a single header to the request.
 		Equivalent to add_headers with a single Header argument.
 	*/
 	[[nodiscard]]
@@ -1752,8 +1752,8 @@ public:
 		return std::move(*this).add_headers(std::format("{}: {}", header.name, header.value));
 	}
 
-	/*
-		Sets the content of the request as a sequence of bytes.
+	/**
+ * 	Sets the content of the request as a sequence of bytes.
 	*/
 	template<utils::IsByte Byte_>
 	[[nodiscard]]
@@ -1767,15 +1767,15 @@ public:
 		}
 		return std::move(*this);
 	}
-	/*
-		Sets the content of the request as a string view.
+	/**
+ * 	Sets the content of the request as a string view.
 	*/
 	[[nodiscard]]
 	Request&& set_body(std::string_view const body_data) && {
 		return std::move(*this).set_body(utils::string_to_data<std::byte>(body_data));
 	}
-	/*
-		Sets a callback to be called after every chunk or buffer of response data has been received from the server.
+	/**
+ * 	Sets a callback to be called after every chunk or buffer of response data has been received from the server.
 		The callback takes a mutable ResponseProgressRaw reference which is used to retrieve the data
 		and possibly stop receiving data from the server.
 	*/
@@ -1784,8 +1784,8 @@ public:
 		callbacks_.handle_raw_progress = std::move(callback);
 		return std::move(*this);
 	}
-	/*
-		Sets a callback to be called as soon as the whole header portion of the response has been received.
+	/**
+ * 	Sets a callback to be called as soon as the whole header portion of the response has been received.
 		The callback takes a mutable ResponseProgressHeaders reference which is used to retrieve the parsed header data
 		and possibly stop receiving data from the server.
 	*/
@@ -1805,11 +1805,11 @@ public:
 		return std::move(*this);
 	}
 
-	/*
-		Sets a flag such that redirects are followed automatically.
-		This happens when either StatusCode::MovedPermanently (301) and StatusCode::Found (302) is received
-		and the server supplies a URL to follow via a "location" header.
-	*/
+	/**
+ *  * Sets a flag such that redirects are followed automatically.
+	 * This happens when either StatusCode::MovedPermanently (301) and StatusCode::Found (302) is received
+	 * and the server supplies a URL to follow via a "location" header.
+	 */
 	[[nodiscard]]
 	Request&& follow_redirects() && {
 		follow_redirects_ = true;
@@ -1819,40 +1819,39 @@ public:
 	// Note: send and send_async are not [[nodiscard]] because callbacks 
 	// could potentially be used exclusively to handle the response.
 
-	/*
-		Sends the request and blocks until the response has been received.
-	*/
+	/**
+ *  * Sends the request and blocks until the response has been received.
+	 */
 	Response send() && {
 		return algorithms::receive_response<>(send_and_get_receive_socket_(), std::move(url_), std::move(callbacks_));
 	}
-	/*
-		Sends the request and blocks until the response has been received.
-
-		The buffer_size template parameter specifies the size of the buffer that data
-		from the server is read into at a time. If it is small, then data will be received
-		in many times in smaller pieces, with some time cost. If it is big, then 
-		data will be read few times but in large pieces, with more memory cost.
-	*/
+	/**
+ *  * Sends the request and blocks until the response has been received.
+	 * 
+	 * The buffer_size template parameter specifies the size of the buffer that data
+	 * from the server is read into at a time. If it is small, then data will be received
+	 * many times in smaller pieces, with some time cost. If it is big, then 
+	 * data will be read few times but in large pieces, with more memory cost.
+	 */
 	template<std::size_t buffer_size>
 	Response send() && {
 		return algorithms::receive_response<buffer_size>(send_and_get_receive_socket_(), std::move(url_), std::move(callbacks_));
 	}
-	/*
-		Sends the request and returns immediately after the data has been sent.
-		The returned future receives the response asynchronously.
-	*/
+	/**
+ *  * Sends the request and returns immediately after the data has been sent.
+	 * The returned future receives the response asynchronously.
+	 */
 	std::future<Response> send_async() && {
 		return std::async(&algorithms::receive_response<>, send_and_get_receive_socket_(), std::move(url_), std::move(callbacks_));
 	}
-	/*
-		Sends the request and returns immediately after the data has been sent.
-		The returned future receives the response asynchronously.
-
-		The buffer_size template parameter specifies the size of the buffer that data
-		from the server is read into at a time. If it is small, then data will be received
-		many times in smaller pieces, with some time cost. If it is big, then 
-		data will be read few times but in large pieces, with more memory cost.
-	*/
+	/**
+ *  * Sends the request and returns immediately after the data has been sent.
+	 * The returned future receives the response asynchronously. * 
+	 * The buffer_size template parameter specifies the size of the buffer that data
+	 * from the server is read into at a time. If it is small, then data will be received
+	 * many times in smaller pieces, with some time cost. If it is big, then 
+	 * data will be read few times but in large pieces, with more memory cost.
+	 */
 	template<std::size_t buffer_size>
 	std::future<Response> send_async() && {
 		return std::async(&algorithms::receive_response<buffer_size>, send_and_get_receive_socket_(), std::move(url_), std::move(callbacks_));
@@ -1931,41 +1930,41 @@ private:
 	friend Request make_request(RequestMethod, std::string_view, Protocol);
 };
 
-/*
-	Creates a GET request.
-	url is a URL to the server or resource that the request targets.
-	If url contains a protocol prefix, it is used. Otherwise, default_protocol is used.
-*/
+/**
+ * Creates a GET request.
+ * url is a URL to the server or resource that the request targets.
+ * If url contains a protocol prefix, it is used. Otherwise, default_protocol is used.
+ */
 [[nodiscard]] 
 inline Request get(std::string_view const url, Protocol const default_protocol = Protocol::Http) {
 	return Request{RequestMethod::Get, url, default_protocol};
 }
 
-/*
-	Creates a POST request.
-	url is a URL to the server or resource that the request targets.
-	If url contains a protocol prefix, it is used. Otherwise, default_protocol is used.
-*/
+/**
+ * Creates a POST request.
+ * url is a URL to the server or resource that the request targets.
+ * If url contains a protocol prefix, it is used. Otherwise, default_protocol is used.
+ */
 [[nodiscard]]
 inline Request post(std::string_view const url, Protocol const default_protocol = Protocol::Http) {
 	return Request{RequestMethod::Post, url, default_protocol};
 }
 
-/*
-	Creates a PUT request.
-	url is a URL to the server or resource that the request targets.
-	If url contains a protocol prefix, it is used. Otherwise, default_protocol is used.
-*/
+/**
+ * Creates a PUT request.
+ * url is a URL to the server or resource that the request targets.
+ * If url contains a protocol prefix, it is used. Otherwise, default_protocol is used.
+ */
 [[nodiscard]]
 inline Request put(std::string_view const url, Protocol const default_protocol = Protocol::Http) {
 	return Request{RequestMethod::Put, url, default_protocol};
 }
 
-/*
-	Creates a http(s) request.
-	Can be used to do the same things as get() and post(), but with more method options.
-	If url contains a protocol prefix, it is used. Otherwise, default_protocol is used.
-*/
+/**
+ * Creates an http(s) request.
+ * Can be used to do the same things as get() and post(), but with more method options.
+ * If url contains a protocol prefix, it is used. Otherwise, default_protocol is used.
+ */
 [[nodiscard]]
 inline Request make_request(
 	RequestMethod const method, 
